@@ -21,8 +21,8 @@ actions+=/call_action_list,name=items
 actions+=/soul_swap,if=dot.unstable_affliction.remains<5
 actions+=/unstable_affliction,if=remains<5
 actions+=/agony,if=remains<5
-actions+=/siphon_life,if=remains<5
 actions+=/corruption,if=remains<5
+actions+=/siphon_life,if=remains<5
 actions+=/haunt
 actions+=/drain_soul,if=talent.shadow_embrace&(debuff.shadow_embrace.stack<3|debuff.shadow_embrace.remains<3)
 actions+=/shadow_bolt,if=talent.shadow_embrace&(debuff.shadow_embrace.stack<3|debuff.shadow_embrace.remains<3)
@@ -40,6 +40,8 @@ actions+=/malefic_rapture,if=talent.tormented_crescendo&talent.nightfall&buff.ni
 actions+=/drain_life,if=buff.inevitable_demise.stack>48|buff.inevitable_demise.stack>20&time_to_die<4
 actions+=/drain_soul,if=buff.nightfall.up
 actions+=/shadow_bolt,if=buff.nightfall.up
+actions+=/agony,if=refreshable
+actions+=/corruption,if=refreshable
 actions+=/soul_tap
 actions+=/drain_soul,interrupt=1
 actions+=/shadow_bolt
