@@ -70,7 +70,7 @@ std::string ratings_invalidate( const player_effect_t& data )
 
 std::string school( uint32_t opt )
 {
-  return opt == 0x7f ? "All" : util::school_type_string( dbc::get_school_type( opt ) );
+  return opt == 0x7f ? "all" : util::school_type_string( dbc::get_school_type( opt ) );
 }
 
 std::string pet_type( uint32_t opt )
@@ -95,12 +95,12 @@ std::string parse_cb_str( parse_callback_e type )
 }
 }  // namespace opt_strings
 
-player_effect_t& player_effect_t::add_parse_callback( parse_effects_t* base, parse_callback_e type, parse_cb_t fn )
+player_effect_t& player_effect_t::add_parse_callback( parse_effects_t* base, parse_callback_e cb_type, parse_cb_t fn )
 {
-  uint32_t mask = 1U << ( base->callback_list[ type ].size() + 8 * static_cast<unsigned>( type ) );
+  uint32_t mask = 1U << ( base->callback_list[ cb_type ].size() + 8 * static_cast<unsigned>( cb_type ) );
   idx |= mask;
-  base->callback_mask[ type ] |= mask;
-  base->callback_list[ type ].push_back( std::move( fn ) );
+  base->callback_mask[ cb_type ] |= mask;
+  base->callback_list[ cb_type ].push_back( std::move( fn ) );
   simple = false;
   return *this;
 }
@@ -134,8 +134,7 @@ player_effect_t& player_effect_t::print_debug( sim_t* sim, std::string prefix )
   else
     mod_str = "from";
 
-  sim->print_debug( "{} manually modified by {} {} {} ({}#{})", prefix, val_str, mod_str, eff->spell()->name_cstr(),
-                    eff->spell()->id(), eff->index() + 1 );
+  sim->print_debug( "{} manually modified by {} {} {}", prefix, val_str, mod_str, *eff );
 
   return *this;
 }
@@ -665,7 +664,7 @@ bool parse_effects_t::parse_effect( pack_t<U>& pack, size_t i, bool force )
       return false;
   }
 
-  if ( pack.data.value != 0.0 )
+  if ( pack.data.type & VALUE_OVERRIDE )
   {
     val = pack.data.value;
     val_mul = 1.0;
@@ -690,7 +689,7 @@ bool parse_effects_t::parse_effect( pack_t<U>& pack, size_t i, bool force )
 
   if constexpr ( is_detected_v<detect_type, U> )
   {
-    if ( !val && tmp.type == USE_DATA )
+    if ( !val && !( tmp.type & ( USE_CURRENT | USE_DEFAULT | ALLOW_ZERO | VALUE_FUNCTION ) ) )
       return false;
   }
   else
@@ -737,7 +736,7 @@ bool parse_effects_t::parse_effect( pack_t<U>& pack, size_t i, bool force )
       val_str += " (value function)";
   }
 
-  debug_message( tmp, type_str, val_str, pack.spell, i );
+  debug_message( tmp, type_str, val_str, eff );
 
   tmp.value = val;
   tmp.mastery = mastery;
@@ -751,7 +750,7 @@ bool parse_effects_t::parse_effect( pack_t<U>& pack, size_t i, bool force )
       tmp.simple = false;
     }
 
-    if ( tmp.simple && !tmp.buff  )
+    if ( tmp.simple && !tmp.buff && !( tmp.type & PARSE_PASSIVE ) )
     {
       throw_passive_error( pack.spell );
       return false;
@@ -1104,8 +1103,10 @@ double parse_player_effects_t::composite_player_healing_received_multiplier() co
 double parse_player_effects_t::composite_player_absorb_received_multiplier() const
 {
   auto ar = player_t::composite_player_absorb_received_multiplier();
+
   for ( const auto& i : absorb_received_mult_effects )
     ar *= 1.0 + get_effect_value( i );
+
   return ar;
 }
 
@@ -1133,16 +1134,48 @@ double parse_player_effects_t::composite_player_target_pet_damage_multiplier( pl
   return tm;
 }
 
-void parse_player_effects_t::target_mitigation( school_e school, result_amount_type, action_state_t* state )
+double parse_player_effects_t::composite_mitigation_multiplier( const action_state_t* s, school_e school, bool direct ) const
 {
-  for ( const auto& i : damage_taken_multiplier_effects )
-    if ( i.opt_enum & dbc::get_school_mask( school ) )
-      state->result_amount *= 1.0 + get_effect_value( i );
+  auto m = player_t::composite_mitigation_multiplier( s, school, direct );
 
-  auto td = get_target_data( state->target );
-  for ( const auto& i : target_damage_done_multiplier_effects )
+  for ( const auto& i : mitigation_multiplier_effects )
     if ( i.opt_enum & dbc::get_school_mask( school ) )
-      state->result_amount *= 1.0 + get_effect_value( i, td );
+      m *= 1.0 + get_effect_value( i );
+
+  return m;
+}
+
+double parse_player_effects_t::composite_mitigation_from_player_multiplier( player_t* source, const action_state_t* s,
+                                                                            school_e school, bool direct ) const
+{
+  auto m = player_t::composite_mitigation_from_player_multiplier( source, s, school, direct );
+  auto td = get_target_data( source );
+
+  for ( const auto& i : mitigation_from_target_multiplier_effects )
+    if ( i.opt_enum & dbc::get_school_mask( school ) )
+      m *= 1.0 + get_effect_value( i, td );
+
+  return m;
+}
+
+double parse_player_effects_t::non_stacking_movement_modifier() const
+{
+  auto m = player_t::non_stacking_movement_modifier();
+
+  for ( const auto& i : non_stacking_movement_effects )
+    m = std::max( get_effect_value( i ), m );
+
+  return m;
+}
+
+double parse_player_effects_t::stacking_movement_modifier() const
+{
+  auto m = player_t::stacking_movement_modifier();
+
+  for ( const auto& i : stacking_movement_effects )
+    m += get_effect_value( i );
+
+  return m;
 }
 
 void parse_player_effects_t::invalidate_cache( cache_e c )
@@ -1323,7 +1356,7 @@ std::vector<player_effect_t>* parse_player_effects_t::get_effect_vector( const s
       tmp.opt_enum = eff.misc_value1();
       str = opt_strings::school( tmp.opt_enum );
       str += " damage taken";
-      return &damage_taken_multiplier_effects;
+      return &mitigation_multiplier_effects;
 
     case A_MOD_ABSORB_DONE_PERCENT:
       str = "absorb multiplier";
@@ -1336,6 +1369,16 @@ std::vector<player_effect_t>* parse_player_effects_t::get_effect_vector( const s
     case A_MOD_ABSORB_RECEIVED_PERCENT:
       str = "absorb received";
       return &absorb_received_mult_effects;
+
+    case A_MOD_INCREASE_SPEED:
+      str = "exclusive move speed";
+      invalidate( CACHE_RUN_SPEED );
+      return &non_stacking_movement_effects;
+
+    case A_MOD_SPEED_ALWAYS:
+      str = "stacking move speed";
+      invalidate( CACHE_RUN_SPEED );
+      return &stacking_movement_effects;
 
     case A_MOD_PERCENT_STAT:
       sim->error( SEVERE,
@@ -1352,7 +1395,7 @@ std::vector<player_effect_t>* parse_player_effects_t::get_effect_vector( const s
 }
 
 void parse_player_effects_t::debug_message( const player_effect_t& data, std::string_view type_str,
-                                            std::string_view val_str, const spell_data_t* s_data, size_t i )
+                                            std::string_view val_str, const spelleffect_data_t& eff )
 {
   auto splits = util::string_split<std::string_view>( type_str, "|" );
   auto tok1 = splits[ 0 ];
@@ -1364,32 +1407,31 @@ void parse_player_effects_t::debug_message( const player_effect_t& data, std::st
   if ( data.buff )
   {
     sim->print_debug( "player-effects: {} {} modified by {} {} buff {} ({}#{})", *this, tok1, tok2,
-                      data.use_stacks ? "per stack of" : "with", data.buff->name(), data.buff->data().id(), i );
+                      data.use_stacks ? "per stack of" : "with", data.buff->name(), eff.spell()->id(),
+                      eff.index() + 1 );
   }
   else if ( data.func )
   {
-    sim->print_debug( "player-effects: {} {} modified by {} with condition from {} ({}#{})", *this, tok1, tok2,
-                      s_data->name_cstr(), s_data->id(), i );
+    sim->print_debug( "player-effects: {} {} modified by {} with condition from {}", *this, tok1, tok2, eff );
   }
   else
   {
-    sim->print_debug( "player-effects: {} {} modified by {} from {} ({}#{})", *this, tok1, tok2, s_data->name_cstr(),
-                      s_data->id(), i );
+    sim->print_debug( "player-effects: {} {} modified by {} from {}", *this, tok1, tok2, eff );
   }
 }
 
 void parse_player_effects_t::throw_passive_error( const spell_data_t* s )
 {
   if ( s->flags( SX_PASSIVE ) )
-    sim->error( TRIVIAL,
-                "Parse Effects: Spell `{}` ignored. Passive effects are applied automatically. Please remove this from "
-                "parse_effects().",
-                s->name_cstr() );
+  {
+    sim->error(
+      "Parse Effects: {} is a passive spell and applied automatically. Please remove this from parse_effects().", *s );
+  }
   else
-    sim->error( TRIVIAL,
-                "Parse Effects: Spell `{}` was ignored due to being detected as a passive effect. If this is "
-                "incorrect, please report it.",
-                s->name_cstr() );
+  {
+    sim->error(
+      "Parse Effects: {} was determined to be a passive spell and ignored. Please report if incorrect.", *s );
+  }
 }
 
 bool parse_player_effects_t::is_valid_target_aura( const spelleffect_data_t& eff ) const
@@ -1410,23 +1452,23 @@ std::vector<target_effect_t>* parse_player_effects_t::get_effect_vector( const s
   {
     case A_MOD_DAMAGE_FROM_CASTER:
       tmp.opt_enum = eff.misc_value1();
-      str = opt_strings::school( tmp.opt_enum );
+      str = fmt::format( "{} damage taken from {}", opt_strings::school( tmp.opt_enum ), *_player );
       return &target_multiplier_effects;
 
     case A_MOD_DAMAGE_FROM_CASTER_PET:
       tmp.opt_enum = 0;
-      str = "pet";
+      str = fmt::format( "pet damage taken from {}", *_player );
       return &target_pet_multiplier_effects;
 
     case A_MOD_DAMAGE_FROM_CASTER_GUARDIAN:
       tmp.opt_enum = 1;
-      str = "guardian";
+      str = fmt::format( "guardian damage taken from {}", *_player );
       return &target_pet_multiplier_effects;
 
     case A_MOD_DAMAGE_TO_CASTER:
       tmp.opt_enum = eff.misc_value1();
-      str = opt_strings::school( tmp.opt_enum );
-      return &target_damage_done_multiplier_effects;
+      str = fmt::format( "{} damage done to {}", opt_strings::school( tmp.opt_enum ), *_player );
+      return &mitigation_from_target_multiplier_effects;
 
     default:
       return nullptr;
@@ -1436,10 +1478,9 @@ std::vector<target_effect_t>* parse_player_effects_t::get_effect_vector( const s
 }
 
 void parse_player_effects_t::debug_message( const target_effect_t&, std::string_view type_str, std::string_view val_str,
-                                            const spell_data_t* s_data, size_t i )
+                                            const spelleffect_data_t& eff )
 {
-  sim->print_debug( "target-effects: Target {} damage taken modified by {} from {} ({}#{})", type_str, val_str,
-                    s_data->name_cstr(), s_data->id(), i );
+  sim->print_debug( "target-effects: Target {} modified by {} from {}", type_str, val_str, eff );
 }
 
 void parse_player_effects_t::print_custom_parsed_effects( report::sc_html_stream& os ) const
@@ -1470,9 +1511,10 @@ void parse_player_effects_t::print_custom_parsed_effects( report::sc_html_stream
     print_parsed_type( os, crit_avoidance_effects, "Crit Avoidance" );
     print_parsed_type( os, crit_chance_effects, "Crit Chance" );
     print_parsed_type( os, crit_bonus_effects, "Crit Damage Bonus" );
+    print_parsed_type( os, mitigation_multiplier_effects, "Damage Taken Multiplier", &opt_strings::school );
+    print_parsed_type( os, mitigation_from_target_multiplier_effects, "Damage Taken From Target Multiplier",
+                       &opt_strings::school );
     print_parsed_type( os, dodge_effects, "Dodge" );
-    print_parsed_type( os, damage_taken_multiplier_effects, "Damage Taken Multiplier", &opt_strings::school );
-    print_parsed_type( os, target_damage_done_multiplier_effects, "Target Damage Done Multiplier", &opt_strings::school );
     print_parsed_type( os, expertise_effects, "Expertise" );
     print_parsed_type( os, haste_effects, "All Haste" );
     print_parsed_type( os, melee_haste_effects, "Melee Haste" );
@@ -1480,6 +1522,8 @@ void parse_player_effects_t::print_custom_parsed_effects( report::sc_html_stream
     print_parsed_type( os, healing_received_effects, "Healing Received" );
     print_parsed_type( os, leech_effects, "Leech" );
     print_parsed_type( os, mastery_effects, "Mastery", nullptr, mastery_val );
+    print_parsed_type( os, non_stacking_movement_effects, "Move Speed Modifier - Exclusive" );
+    print_parsed_type( os, stacking_movement_effects, "Move Speed Modifier - Stacking" );
     print_parsed_type( os, parry_effects, "Parry" );
     print_parsed_type( os, parry_rating_from_crit_effects, "Parry Rating from Crit" );
     print_parsed_type( os, pet_multiplier_effects, "Pet Multiplier", &opt_strings::pet_type );
@@ -1519,13 +1563,15 @@ size_t parse_player_effects_t::total_effects_count() const
          mastery_effects.size() +
          parry_rating_from_crit_effects.size() +
          dodge_effects.size() +
-         damage_taken_multiplier_effects.size() +
-         target_damage_done_multiplier_effects.size() +
+         mitigation_multiplier_effects.size() +
+         mitigation_from_target_multiplier_effects.size() +
          absorb_multiplier_effects.size() +
          healing_received_effects.size() +
          absorb_received_mult_effects.size() +
          target_multiplier_effects.size() +
-         target_pet_multiplier_effects.size();
+         target_pet_multiplier_effects.size() +
+         non_stacking_movement_effects.size() +
+         stacking_movement_effects.size();
 }
 
 void parse_action_base_t::parse_callback_function( pack_t<player_effect_t>& pack, parse_cb_t cb )
@@ -1548,9 +1594,17 @@ void parse_action_base_t::parse_callback_function( pack_t<player_effect_t>& pack
   {
     assert( pack.data.buff && "CONSUME_BUFF requires a buff" );
 
-    parse_callback_function( pack, [ a = _action, b = pack.data.buff ]( action_state_t* ) {
-      b->consume( a );
-    } );
+    if ( !pack.data.buff->can_consume( _action ) )
+    {
+      _player->sim->print_debug( "action-effects: {} cannot consume buff {}, skipping CONSUME_BUFF.", *_action,
+                                 *pack.data.buff );
+    }
+    else
+    {
+      parse_callback_function( pack, [ a = _action, b = pack.data.buff ]( action_state_t* ) {
+        b->consume( a );
+      } );
+    }
   }
 }
 
@@ -1562,10 +1616,9 @@ void parse_action_base_t::register_callback_function( pack_t<player_effect_t>& p
       continue;
 
     callback_list[ i ].push_back( std::move( pack.callback[ i ] ) );
-    _player->sim->print_debug( "action-effects: {} registering {} parse callback ({:#010x}) on {} {} ({})", *_action,
+    _player->sim->print_debug( "action-effects: {} registering {} parse callback ({:#010x}) on {} {}", *_action,
                                opt_strings::parse_cb_str( static_cast<parse_callback_e>( i ) ),
-                               pack.data.idx & ( 0xFF << ( i * 8 ) ), pack.data.buff ? "buff" : "spell",
-                               pack.spell->name_cstr(), pack.spell->id() );
+                               pack.data.idx & ( 0xFF << ( i * 8 ) ), pack.data.buff ? "buff" : "spell", *pack.spell );
   }
 }
 
@@ -1713,7 +1766,7 @@ std::vector<player_effect_t>* parse_action_base_t::get_effect_vector( const spel
 }
 
 void parse_action_base_t::debug_message( const player_effect_t& data, std::string_view type_str,
-                                         std::string_view val_str, const spell_data_t* s_data, size_t i )
+                                         std::string_view val_str, const spelleffect_data_t& eff )
 {
   auto splits = util::string_split<std::string_view>( type_str, "|" );
   auto tok1 = splits[ 0 ];
@@ -1741,33 +1794,31 @@ void parse_action_base_t::debug_message( const player_effect_t& data, std::strin
     }
 
     _action->sim->print_debug( "action-effects: {} {} modified by {} {} buff {} ({}#{})", *_action, tok1, tok2,
-                               stack_str, data.buff->name(), data.buff->data().id(), i );
+                               stack_str, data.buff->name(), eff.spell()->id(), eff.index() + 1 );
   }
   else if ( data.func )
   {
-    _action->sim->print_debug( "action-effects: {} {} modified by {} with condition from {} ({}#{})", *_action, tok1,
-                               tok2, s_data->name_cstr(), s_data->id(), i );
+    _action->sim->print_debug( "action-effects: {} {} modified by {} with condition from {}", *_action, tok1, tok2,
+                               eff );
   }
   else
   {
-    _action->sim->print_debug( "action-effects: {} {} modified by {} from {} ({}#{})", *_action, tok1, tok2,
-                               s_data->name_cstr(), s_data->id(), i );
+    _action->sim->print_debug( "action-effects: {} {} modified by {} from {}", *_action, tok1, tok2, eff );
   }
 }
 
 void parse_action_base_t::throw_passive_error( const spell_data_t* s )
 {
   if ( s->flags( SX_PASSIVE ) )
+  {
     _action->sim->error(
-        TRIVIAL,
-        "Parse Effects: Spell `{}` ignored. Passive effects are applied automatically. Please remove this from "
-        "parse_effects().",
-        s->name_cstr() );
+      "Parse Effects: {} is a passive spell and applied automatically. Please remove this from parse_effects().", *s );
+  }
   else
-    _action->sim->error( TRIVIAL,
-                         "Parse Effects: Spell `{}` was ignored due to being detected as a passive effect. If this is "
-                         "incorrect, please report it.",
-                         s->name_cstr() );
+  {
+    _action->sim->error(
+      "Parse Effects: {} was determined to be a passive spell and ignored. Please report if incorrect.", *s );
+  }
 }
 
 bool parse_action_base_t::is_valid_target_aura( const spelleffect_data_t& eff ) const
@@ -1819,10 +1870,10 @@ std::vector<target_effect_t>* parse_action_base_t::get_effect_vector( const spel
 }
 
 void parse_action_base_t::debug_message( const target_effect_t&, std::string_view type_str, std::string_view val_str,
-                                         const spell_data_t* s_data, size_t i )
+                                         const spelleffect_data_t& eff )
 {
-  _action->sim->print_debug( "target-effects: {} {} modified by {} on targets with debuff {} ({}#{})", *_action,
-                             type_str, val_str, s_data->name_cstr(), s_data->id(), i );
+  _action->sim->print_debug( "target-effects: {} {} modified by {} on targets with debuff {}", *_action, type_str,
+                             val_str, eff );
 }
 
 bool parse_action_base_t::can_force( const spelleffect_data_t& eff ) const

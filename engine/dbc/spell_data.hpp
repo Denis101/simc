@@ -416,6 +416,8 @@ struct spelleffect_data_t
   { return base_value() * default_multiplier(); }
   unsigned affected_schools() const;
 
+  friend void sc_format_to( const spelleffect_data_t&, fmt::format_context::iterator );
+
   static const spelleffect_data_t& nil();
   static const spelleffect_data_t* find( unsigned, bool ptr = false );
   static util::span<const spelleffect_data_t> data( bool ptr = false );
@@ -468,6 +470,8 @@ struct spell_data_t
   unsigned    _dmg_class;          // Classification for the spell
   // SpellTargetRestrictions.dbc
   int         _max_targets;        // Max number of targets
+  double      _cone_degrees;       // Spell cone angle in degrees. Can be negative for rear facing cones. Uses Effect Radius for length
+  double      _line_width;         // Spell line width in yards. Uses Effect Radius for length
   // SpellDuration.dbc
   double      _duration;           // Spell duration in milliseconds
   // SpellAuraOptions.dbc
@@ -616,6 +620,12 @@ struct spell_data_t
 
   int max_targets() const
   { return _max_targets; }
+
+  double cone_degrees() const
+  { return _cone_degrees; }
+
+  double line_width() const
+  { return _line_width; }
 
   unsigned power_id() const
   { return _power_id; }
@@ -849,6 +859,8 @@ struct spell_data_t
   bool affected_by( const spell_data_t& ) const;
   bool affected_by( const spelleffect_data_t* ) const;
   bool affected_by( const spelleffect_data_t& ) const;
+
+  friend void sc_format_to( const spell_data_t&, fmt::format_context::iterator );
 
   // static functions
   static const spell_data_t* nil();

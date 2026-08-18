@@ -148,9 +148,9 @@ class BLTEChunk:
 
         iv_len = struct.unpack_from('<B', data, offset)[0]
         offset += 1
-        if iv_len != 4:
+        if iv_len not in (4, 8):
             print(
-                f"Only initial vector lengths of 4 bytes are supported for encrypted chunks, "
+                f"Only initial vector lengths of 4 or 8 bytes are supported for encrypted chunks, "
                 f"given {iv_len}",
                 file=sys.stderr)
             return False
@@ -794,9 +794,27 @@ class CDNIndex(CASCObject):
 
             handle, cached = self.cached_open(index_file_path, index_file_url)
             if not self.parse_archive(handle, idx):
-                self.options.parser.error(
-                    'Unable to parse index file %s, aborting ...' %
-                    index_file_name)
+                if not cached:
+                    # CDN may have returned an empty/truncated response, retry
+                    for retry in range(2):
+                        print(f"Retrying {index_file_name} (attempt {retry + 2}) ...",
+                              file=sys.stderr)
+                        time.sleep(1)
+                        handle, _ = self.cached_open(index_file_path, index_file_url)
+                        if self.parse_archive(handle, idx):
+                            break
+                    else:
+                        self.options.parser.error(
+                            'Unable to parse index file %s, aborting ...' %
+                            index_file_name)
+                else:
+                    # Cached file is corrupt, delete and re-fetch
+                    os.unlink(index_file_path)
+                    handle, _ = self.cached_open(index_file_path, index_file_url)
+                    if not self.parse_archive(handle, idx):
+                        self.options.parser.error(
+                            'Unable to parse index file %s, aborting ...' %
+                            index_file_name)
 
             if not cached:
                 self.write_cache(index_file_path, handle)
@@ -805,6 +823,12 @@ class CDNIndex(CASCObject):
 
     def parse_archive(self, handle, idx):
         buf = handle.read()
+
+        if len(buf) < _ARCHIVE_IDX_FOOTER.size:
+            print(f"Archive index too small ({len(buf)} bytes), expected at least {_ARCHIVE_IDX_FOOTER.size}",
+                  file=sys.stderr)
+            return False
+
         data_size = len(buf) - _ARCHIVE_IDX_FOOTER.size
 
         offset_footer = data_size

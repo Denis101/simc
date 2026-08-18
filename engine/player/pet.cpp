@@ -360,13 +360,17 @@ void pet_t::assess_damage( school_e school, result_amount_type rt, action_state_
   return base_t::assess_damage( school, rt, s );
 }
 
-void pet_t::trigger_callbacks( proc_types pt, proc_types2 pt2, action_t* action, action_state_t* state )
+void pet_t::trigger_callbacks( proc_types pt, proc_types2 pt2, action_t* action, action_state_t* state,
+                               proc_trigger_type_e pt_type )
 {
-  player_t::trigger_callbacks( pt, pt2, action, state );
+  player_t::trigger_callbacks( pt, pt2, action, state, pt_type );
 
   // currently only works for pets and guardians.
   if ( type == PLAYER_GUARDIAN || type == PLAYER_PET )
-    action_callback_t::trigger( owner->callbacks.pet_procs[ pt ][ pt2 ], action, state );
+  {
+    action_callback_t::trigger( owner->callbacks.pet_procs[ pt ][ pt2 ], action->proc_data, this, state->target, state,
+                                pt_type );
+  }
 }
 
 void pet_t::init_finished()
@@ -487,11 +491,6 @@ double pet_t::composite_player_critical_damage_multiplier( const action_state_t*
 
   // Pets inherit the owner's critical damage multiplier.
   m *= owner->composite_player_critical_damage_multiplier( s, school );
-
-  // These effects apply to both the player and the pet via Apply Player/Pet Aura (202) and the pet inherits from the
-  // player, effectively getting double the mod.
-  m *= 1.0 + owner -> racials.brawn -> effectN( 1 ).percent();
-  m *= 1.0 + owner -> racials.might_of_the_mountain -> effectN( 1 ).percent();
 
   return m;
 }

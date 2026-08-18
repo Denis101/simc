@@ -403,7 +403,7 @@ void worker_t::execute()
 {
   try
   {
-    m_sim = new sim_t( m_parent, 0, m_profileset->options() );
+    m_sim = new sim_t( m_parent, 0, m_profileset->options(), m_profileset->name() );
 
     simulate_profileset( m_parent, *m_profileset, m_sim );
   }
@@ -501,7 +501,7 @@ void profilesets_t::generate_work( sim_t* parent, std::unique_ptr<profile_set_t>
 
     try
     {
-      sim_t* profile_sim = new sim_t( parent );
+      sim_t* profile_sim = new sim_t( parent, 0, ptr_set->name() );
 
       parent->control = original_opts;
       simulate_profileset( parent, *ptr_set, profile_sim );
@@ -1021,6 +1021,21 @@ statistical_data_t metric_data( const player_t* player, scale_metric_e metric )
         sqrt( d.aps.mean_variance + d.hps.mean_variance )
       };
     }
+    case SCALE_METRIC_DHAPS:
+    {
+      auto hps_value = player->sim->dhaps_healing_weight;
+      auto dps       = collect( d.dps );
+      auto hps       = collect( d.hps );
+      auto aps       = collect( d.aps );
+      return { ( hps.min + aps.min ) * hps_value + dps.min,
+               ( hps.first_quartile + aps.first_quartile ) * hps_value + dps.first_quartile,
+               ( hps.median + aps.median ) * hps_value + dps.median,
+               ( hps.mean + aps.mean ) * hps_value + dps.mean,
+               ( hps.third_quartile + aps.first_quartile ) * hps_value + dps.first_quartile,
+               ( hps.max + aps.max ) * hps_value + dps.max,
+               sqrt( ( d.aps.variance + d.hps.variance ) * hps_value + d.dps.variance ),
+               sqrt( ( d.aps.mean_variance + d.hps.mean_variance ) * hps_value + d.dps.mean_variance ) };
+    }
     default:                     return { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
   }
 }
@@ -1077,35 +1092,35 @@ void save_output_data( profile_set_t& profileset, const player_t* parent_player,
     // secondary stats
 
     profileset.output_data().crit_rating(
-      util::floor( player->composite_melee_crit_rating() > player->composite_spell_crit_rating()
-                     ? player->composite_melee_crit_rating()
-                     : player->composite_spell_crit_rating() ) );
+      util::floor( buffed_stats.melee_crit_rating > buffed_stats.spell_crit_rating
+                     ? buffed_stats.melee_crit_rating
+                     : buffed_stats.spell_crit_rating ) );
     profileset.output_data().crit_pct( buffed_stats.attack_crit_chance > buffed_stats.spell_crit_chance
                                          ? buffed_stats.attack_crit_chance
                                          : buffed_stats.spell_crit_chance );
 
     profileset.output_data().haste_rating(
-      util::floor( player->composite_melee_haste_rating() > player->composite_spell_haste_rating()
-                     ? player->composite_melee_haste_rating()
-                     : player->composite_spell_haste_rating() ) );
+      util::floor( buffed_stats.melee_haste_rating > buffed_stats.spell_haste_rating
+                     ? buffed_stats.melee_haste_rating
+                     : buffed_stats.spell_haste_rating ) );
 
     double attack_haste_pct = 1 / buffed_stats.attack_haste - 1;
     double spell_haste_pct = 1 / buffed_stats.spell_haste - 1;
     profileset.output_data().haste_pct( attack_haste_pct > spell_haste_pct ? attack_haste_pct : spell_haste_pct );
 
-    profileset.output_data().mastery_rating( util::floor( player->composite_mastery_rating() ) );
+    profileset.output_data().mastery_rating( util::floor( buffed_stats.mastery_rating ) );
     profileset.output_data().mastery_pct( buffed_stats.mastery_value );
 
-    profileset.output_data().versatility_rating( util::floor( player->composite_damage_versatility_rating() ) );
+    profileset.output_data().versatility_rating( util::floor( buffed_stats.versatility_rating ) );
     profileset.output_data().versatility_pct( buffed_stats.damage_versatility );
 
     // tertiary stats
 
-    profileset.output_data().avoidance_rating( player->composite_avoidance_rating() );
+    profileset.output_data().avoidance_rating( buffed_stats.avoidance_rating );
     profileset.output_data().avoidance_pct( buffed_stats.avoidance );
-    profileset.output_data().leech_rating( player->composite_leech_rating() );
+    profileset.output_data().leech_rating( buffed_stats.leech_rating );
     profileset.output_data().leech_pct( buffed_stats.leech );
-    profileset.output_data().speed_rating( player->composite_spell_haste_rating() );
+    profileset.output_data().speed_rating( buffed_stats.speed_rating );
     profileset.output_data().speed_pct( buffed_stats.run_speed );
 
     profileset.output_data().corruption( buffed_stats.corruption );

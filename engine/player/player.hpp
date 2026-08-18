@@ -171,11 +171,11 @@ struct player_t : public actor_t
   bool        potion_used;
   double      leech_pool;  // for leech batching
 
-
   std::string talents_str, id_str, target_str;
   std::string region_str, server_str, origin_str;
   std::string race_str, professions_str, position_str;
   std::string class_talents_str, spec_talents_str, hero_talents_str;
+  std::string omnium_talents_str;
   // Specify in-game time of day to determine Night Elf racial
   enum timeofday_e { NIGHT_TIME, DAY_TIME, } timeofday;
   // Specify which loa Zandalari has chosen to determine racial
@@ -244,14 +244,14 @@ struct player_t : public actor_t
 
     gear_stats_t stats;
 
-    double spell_power_per_intellect, spell_power_per_attack_power, spell_crit_per_intellect;
-    double attack_power_per_strength, attack_power_per_agility, attack_crit_per_agility, attack_power_per_spell_power;
+    double spell_power_per_intellect, spell_power_per_attack_power;
+    double attack_power_per_strength, attack_power_per_agility, attack_power_per_spell_power;
     double dodge_per_agility, parry_per_strength, parry_rating_per_crit_rating;
     double health_per_stamina;
     std::array<double, SCHOOL_MAX> resource_reduction;
     double miss, dodge, parry, block;
     double hit, expertise, leech, avoidance, crit_avoidance;
-    double spell_crit_chance, attack_crit_chance, block_reduction;
+    double spell_crit_chance, attack_crit_chance, block_value;
     double mastery, versatility, all_crit, all_haste;
     double melee_haste, spell_haste, ranged_haste;
     double skill, skill_debuff, distance;
@@ -323,7 +323,7 @@ struct player_t : public actor_t
   event_t* off_gcd;
   event_t* cast_while_casting_poll_event; // Periodically check for something to do while casting
   event_t* spell_queue_event;
-  std::vector<std::pair<const cooldown_t*,const cooldown_t*>> off_gcd_cd;
+  std::vector<std::pair<const cooldown_t*, const cooldown_t*>> off_gcd_cd;
   std::vector<std::pair<const cooldown_t*, const cooldown_t*>> cast_while_casting_cd;
   timespan_t off_gcd_ready;
   timespan_t cast_while_casting_ready;
@@ -422,6 +422,8 @@ struct player_t : public actor_t
 
   // All Data collected during / end of combat
   player_collected_data_t collected_data;
+  bool collect_pet_sequence_data;
+
 
   // Damage
   double iteration_dmg, priority_iteration_dmg, iteration_dmg_taken; // temporary accumulators
@@ -441,18 +443,16 @@ struct player_t : public actor_t
   player_processed_report_information_t report_information;
 
   void sequence_add_wait( timespan_t wait );
-  void sequence_add( const action_t* a, const player_t* target,
-                     std::function<void( std::string&, std::string& )> fn = nullptr );
+  void sequence_add( const action_t* a, const player_t* target );
 
   // Gear
-  std::string meta_gem_str, potion_str, flask_str, food_str, rune_str;
+  std::string potion_str, flask_str, food_str, rune_str;
   std::string temporary_enchant_str;
   std::vector<item_t> items;
   gear_stats_t gear, enchant; // Option based stats
   gear_stats_t total_gear; // composite of gear, enchant and for non-pets sim -> enchant
   std::unique_ptr<set_bonus_t> sets;
   std::string set_bonus_str;
-  meta_gem_e meta_gem;
   bool matching_gear;
   std::unique_ptr<cooldown_t> item_cooldown;
   timespan_t default_item_group_cooldown;
@@ -486,33 +486,21 @@ struct player_t : public actor_t
   struct buffs_t
   {
     std::array<std::vector<buff_t*>, STAT_PCT_BUFF_MAX> stat_pct_buffs;
+    // 0 == stacking, 1 == non-stacking, 2 == non-stacking with multiple buff stacks
+    std::array<std::vector<std::pair<double, buff_t*>>, 3> movement_speed_buffs;
     std::vector<std::tuple<buff_t*, unsigned, double>> creature_type_buffs;
-    buff_t* angelic_feather;
-    buff_t* beacon_of_light;
-    buff_t* blood_fury;
-    buff_t* body_and_soul;
     buff_t* damage_done;
-    buff_t* darkflight;
     buff_t* devotion_aura;
     buff_t* entropic_embrace;
     buff_t* exhaustion;
     buff_t* guardian_spirit;
     buff_t* blessing_of_sacrifice;
-    buff_t* nitro_boosts;
     buff_t* pain_suppression;
     buff_t* movement;
-    buff_t* stampeding_roar;
     buff_t* shadowmeld;
-    buff_t* close_to_heart_aura;
-    buff_t* generous_pour_aura;
-    buff_t* windwalking_movement_aura;
     buff_t* stoneform;
     buff_t* stunned;
     buff_t* rooted;
-    std::array<buff_t*, 4> ancestral_call;
-    buff_t* fireblood;
-
-    buff_t* berserking;
     buff_t* bloodlust;
 
     // 7.0 trinket proxy buffs
@@ -530,54 +518,26 @@ struct player_t : public actor_t
     buff_t* galeforce_striking; // Gale-Force Striking weapon enchant
     buff_t* torrent_of_elements; // Torrent of Elements weapon enchant
 
-    // Azerite power
-    buff_t* normalization_increase;
-
     /// 8.2 Azerite Essences
     buff_t* memory_of_lucid_dreams;
     buff_t* lucid_dreams; // Versatility Buff from Rank 3
     buff_t* seething_rage_essence; // Blood of the Enemy major - 25% crit dam
 
     // 8.2 misc
-    buff_t* fathom_hunter; // Follower themed Benthic boots special effect
     buff_t* delirious_frenzy; // Dream's End 1H STR axe attack speed buff
-
-    // 9.0 class buffs
-    buff_t* focus_magic; // Mage talent
-    buff_t* power_infusion; // Priest spell
-    buff_t* rallying_cry; // Warrior spell
 
     // 9.0 Runecarves
     buff_t* norgannons_sagacity;         // consume stacks to allow casting while moving
     buff_t* echo_of_eonar;               // passive self buff
 
-    // Trinkets
-    buff_t* soleahs_secret_technique_external;
-    buff_t* elegy_of_the_eternals_external;
-
-    // 9.2 Sepulcher of the First Ones
-    buff_t* boon_of_azeroth; // Jailer fight buff
-    buff_t* boon_of_azeroth_mythic; // Jailer fight buff (Mythic)
-
     // 10.0 Buffs
     buff_t* chilled_clarity;  // potion of chilled clarity
     buff_t* elemental_chaos_fire;  // phial of elemental chaos
-    buff_t* elemental_chaos_air;
     buff_t* elemental_chaos_earth;
     buff_t* elemental_chaos_frost;
-    buff_t* tome_of_unstable_power;
     buff_t* way_of_controlled_currents;
     buff_t* stormeaters_boon;
     buff_t* heavens_nemesis; // Neltharax, Enemy of the Sky
-
-    // 11.0 The War Within
-    buff_t* ingest_mineral;  // earthen well fed racial
-    buff_t* surekian_grace;  // sik'ran's shadow arsenal barrage movement speed buff
-    buff_t* earthen_ire;     // sigil of algari concordance tank buff
-    buff_t* quickwicks_quick_trick_wick_walk;  // quickwick candlestick movement speed buff
-    buff_t* building_momentum;  // scroll of momentum counter buff
-    buff_t* full_momentum;      // scroll of momentum max buff
-    buff_t* potion_bomb_of_power; // potion bomb of power primary stat
   } buffs;
 
   struct debuffs_t
@@ -599,37 +559,22 @@ struct player_t : public actor_t
 
     // Dragonflight Raid Damage Modifier Debuffs
     buff_t* hunters_mark;
-
   } debuffs;
 
   struct external_buffs_t
   {
     std::string pool;
     std::unordered_map<buff_t*, std::vector<cooldown_t*>> invoke_cds;
-    bool focus_magic;
-    double blessing_of_summer_duration_multiplier;
     std::vector<timespan_t> power_infusion;
-    std::vector<timespan_t> blessing_of_summer;
-    std::vector<timespan_t> blessing_of_autumn;
-    std::vector<timespan_t> blessing_of_winter;
-    std::vector<timespan_t> blessing_of_spring;
-    std::vector<timespan_t> conquerors_banner;
     std::vector<timespan_t> rallying_cry;
-    std::vector<timespan_t> boon_of_azeroth;
-    std::vector<timespan_t> boon_of_azeroth_mythic;
-    std::vector<timespan_t> tome_of_unstable_power;
     std::vector<timespan_t> potion_bomb_of_power;
-    int tome_of_unstable_power_ilevel;
     int soleahs_secret_technique;
-    std::string elegy_of_the_eternals;
   } external_buffs;
-
 
   struct gains_t
   {
     std::array<gain_t*, RESOURCE_MAX> resource_regen;
     gain_t* health;
-    gain_t* vampiric_embrace;
   } gains;
 
   struct spells_t
@@ -653,36 +598,9 @@ struct player_t : public actor_t
 
   struct racials_t
   {
-    const spell_data_t* quickness;
-    const spell_data_t* elusiveness;
-    const spell_data_t* command;
-    const spell_data_t* arcane_acuity;
-    const spell_data_t* heroic_presence;
     const spell_data_t* might_of_the_mountain;
-    const spell_data_t* expansive_mind;
-    const spell_data_t* nimble_fingers;
-    const spell_data_t* time_is_money;
-    const spell_data_t* the_human_spirit;
-    const spell_data_t* touch_of_elune;
     const spell_data_t* brawn;
-    const spell_data_t* endurance;
-    const spell_data_t* viciousness;
-    const spell_data_t* magical_affinity;
-    const spell_data_t* mountaineer;
-    const spell_data_t* brush_it_off;
-    const spell_data_t* awakened;
-    const spell_data_t* azerite_surge;
-    const spell_data_t* titanwrought_frame;
-    const spell_data_t* holy_providence;
-    const spell_data_t* lash_out;
-    const spell_data_t* subterranean_predator;
   } racials;
-
-  struct passives_t
-  {
-    double amplification_1;
-    double amplification_2;
-  } passive_values;
 
   bool active_during_iteration;
   const spell_data_t* spec_spell;
@@ -716,72 +634,48 @@ struct player_t : public actor_t
 
   using resource_callback_function_t = std::function<void( bool )>;
 
-  template <typename T>
-  struct player_option_t
-  {
-    T default_value;
-    T current_value;
-
-    player_option_t( const T val = T() ) : default_value( val ), current_value( val ) {}
-
-    template <typename U = T, typename = std::enable_if_t<std::is_same_v<U, std::string>>>
-    player_option_t( const char* val ) : default_value( val ), current_value( val ) {}
-
-    operator T&() { return current_value; }
-    operator T&() const { return current_value; }
-    bool operator==( T other ) { return current_value == other; }
-
-    template <typename U = T, typename = std::enable_if_t<std::is_same_v<U, std::string>>>
-    operator std::string_view() const { return current_value; }
-
-    bool is_default() const { return current_value == default_value; }
-
-    friend void sc_format_to( const player_option_t<T>& opt, fmt::format_context::iterator out )
-    { fmt::format_to( out, "{}", opt.current_value ); }
-  };
-
   struct shadowlands_opt_t
   {
     /// Type stat gained from So'leah's Secret Technique
     /// Buff type: "mastery", "haste", "crit", "versatility"
     /// Overrides sim-wide option with a player-specific one
     /// Empty value indicates use sim-wide option.
-    player_option_t<std::string> soleahs_secret_technique_type;
+    default_value_t<std::string> soleahs_secret_technique_type;
   } shadowlands_opts;
 
   struct dragonflight_opt_t
   {
     /// Stat to trigger for Gyroscopic Kaleidoscope
     /// Buff type: "mastery", "haste", "crit", "versatility"
-    player_option_t<std::string> gyroscopic_kaleidoscope_stat = "haste";
+    default_value_t<std::string> gyroscopic_kaleidoscope_stat = "haste";
     // Ruby Whelp Shell training levels
     // Overrides sim-wide option with a player-specific one
-    player_option_t<std::string> ruby_whelp_shell_training;
+    default_value_t<std::string> ruby_whelp_shell_training;
     // A list of context-aware procs for Ruby Whelp Shell
     // Overrides sim-wide option with a player-specific one
-    player_option_t<std::string> ruby_whelp_shell_context;
+    default_value_t<std::string> ruby_whelp_shell_context;
     // Set the dragonflight for Glimmering Chromatic Orb
     // Overrides sim-wide option with a player-specific one
-    player_option_t<std::string> ominous_chromatic_essence_dragonflight = "obsidian";
+    default_value_t<std::string> ominous_chromatic_essence_dragonflight = "obsidian";
     // Set the allies dragonflights for Glimmering Chromatic Orb
     // Overrides sim-wide option with a player-specific one
-    player_option_t<std::string> ominous_chromatic_essence_allies;
+    default_value_t<std::string> ominous_chromatic_essence_allies;
     // Set the target type for Askhandur's Damage Doubling
     // Overrides sim-wide option with a player-specific one
-    player_option_t<bool> ashkandur_humanoid;
+    default_value_t<bool> ashkandur_humanoid;
     // Set the initial starting state for the igneous flowstone trinket Ebb/Flood/High/Low Tides.
     // Any other input will have it randomly select between High and Low Tide, and this this is default.
     // Overrides sim-wide option with a player-specific one
-    player_option_t<std::string> flowstone_starting_state = "random_active";
+    default_value_t<std::string> flowstone_starting_state = "random_active";
     /// Type stat given by Spoils of Neltharus on pull
     /// Buff type: "mastery", "haste", "crit", "vers", other for random
-    player_option_t<std::string> spoils_of_neltharus_initial_type = "";
+    default_value_t<std::string> spoils_of_neltharus_initial_type;
     /// Chance for igenous flowstone lave wave to hit twice
-    player_option_t<double> igneous_flowstone_double_lava_wave_chance;
+    default_value_t<double> igneous_flowstone_double_lava_wave_chance;
     /// Enable Voice of the Silent Star's proc
-    player_option_t<bool> voice_of_the_silent_star_enable = true;
+    default_value_t<bool> voice_of_the_silent_star_enable = true;
     // Force the extra damage from Nymue's Unraveling Spindle against Immobilized targets
-    player_option_t<bool> nymue_forced_immobilized = false;
+    default_value_t<bool> nymue_forced_immobilized;
     // Option to control the timing to pick up each orb for the Witherbarks Branch Trinket.
     timespan_t witherbarks_branch_timing[ 3 ] = { 1_s, 1_s, 7_s };
     // Enable Rallied to Victory Ally estimation
@@ -799,7 +693,7 @@ struct player_t : public actor_t
     // String of Delicacies skip chance for multi actor sims. Makes it skip a buff to lower the power and simulate loosing some to healers.
     double string_of_delicacies_multi_actor_skip_chance = 0.2;
     // Which random method to use to determine Balefire Branch stack loss from damage. Accepts "rppm", "percent", or "constant"
-    player_option_t<std::string> balefire_branch_loss_rng_type = "constant";
+    default_value_t<std::string> balefire_branch_loss_rng_type = "constant";
     // Set RPPM when "rppm" method is selected
     double balefire_branch_loss_rppm = 2;
     // Set percent chance when "percent" method is selected
@@ -813,22 +707,26 @@ struct player_t : public actor_t
     bool rashoks_use_true_overheal      = false;
     double rashoks_fake_overheal        = 0.4;
     // A list of stat amounts provided by the Timerunner's Advantage buff.
-    player_option_t<std::string> timerunners_advantage;
+    default_value_t<std::string> timerunners_advantage;
     // Number of party members using the Brilliance Tinker.
     int brilliance_party = 1;
     // Number of party members using the Windweaver Tinker.
     int windweaver_party = 4;
     // Tinker Ilvls of party members using the Windweaver Tinker. If not specified they will be your Main Hands ilvl.
-    player_option_t<std::string> windweaver_party_ilvls = "";
+    default_value_t<std::string> windweaver_party_ilvls;
+    // Item level of ally using emerald coach's whistle on you.
+    int emerald_coachs_whistle_ally_ilvl = -1;
+    // Whether the ally is a healer or not
+    bool emerald_coachs_whistle_ally_is_healer = true;
   } dragonflight_opts;
 
   struct thewarwithin_opt_t
   {
     // Starting stance for Sik'rans Shadow Arsenal
-    player_option_t<std::string> sikrans_endless_arsenal_stance = "";
+    default_value_t<std::string> sikrans_endless_arsenal_stance;
     // starting & desired stacks for Ovinax's Mercurial Egg
-    player_option_t<int> ovinaxs_mercurial_egg_initial_primary_stacks = 20;
-    player_option_t<int> ovinaxs_mercurial_egg_desired_primary_stacks = 20;
+    default_value_t<int> ovinaxs_mercurial_egg_initial_primary_stacks = 20;
+    default_value_t<int> ovinaxs_mercurial_egg_desired_primary_stacks = 20;
     // how close to desired stacks you can be before potentially adjusting
     int ovinaxs_mercurial_egg_desired_primary_stacks_leeway = 3;
     // time to pick up Entropic Skardyn Core fragment
@@ -840,7 +738,7 @@ struct player_t : public actor_t
     timespan_t carved_blazikon_wax_stay_in_light_duration = 0_s;  // remain until the end
     timespan_t carved_blazikon_wax_stay_in_light_stddev = 0_s;
     // allies with signet of the priory
-    player_option_t<std::string> signet_of_the_priory_party_stats;
+    default_value_t<std::string> signet_of_the_priory_party_stats;
     timespan_t signet_of_the_priory_party_use_cooldown = 120_s;
     timespan_t signet_of_the_priory_party_use_stddev = 6_s;
     // harvester's edict chance to intercept
@@ -870,15 +768,15 @@ struct player_t : public actor_t
     // currently bugged to trigger on them.
     double mereldars_toll_ally_trigger_chance             = 0.6;
     double sureki_zealots_insignia_rppm_multiplier        = 0.9;
-    player_option_t<std::string> windsingers_passive_stat = "";
+    default_value_t<std::string> windsingers_passive_stat;
     // Mister Lock-n-Stalk mode of operation
-    player_option_t<std::string> mister_locknstalk_mode = "dynamic";
-    player_option_t<std::string> jastor_diamond_ally_stat = "none";
+    default_value_t<std::string> mister_locknstalk_mode = "dynamic";
+    default_value_t<std::string> jastor_diamond_ally_stat = "none";
     double suspicious_energy_drink_bonus_chance           = 0;
     timespan_t additional_gcd_time                        = 0_s;
     // Alchemical Chaos Flask
-    player_option_t<std::string> alchemical_initial_stat    = "none";  // Initial stat for Alchemical Chaos Flask
-    player_option_t<std::string> alchemical_initial_penalty = "none";  // Initial penalty for Alchemical Chaos Flask
+    default_value_t<std::string> alchemical_initial_stat    = "none";  // Initial stat for Alchemical Chaos Flask
+    default_value_t<std::string> alchemical_initial_penalty = "none";  // Initial penalty for Alchemical Chaos Flask
     // Whether or not to use lowest or highest (ethereal) secondary stat
     bool incorporeal_essence_gorger_ethereal = false;
     // Chance to miss the astral antenna orbs due to movement
@@ -899,7 +797,7 @@ struct player_t : public actor_t
     // Default is "raid_random", picking a random race of a raid boss in the current tier
     // "random" picks a random valid race.
     // "none" will use the targets actual race.
-    player_option_t<std::string> darkmoon_hunt_race = "raid_random";
+    default_value_t<std::string> darkmoon_hunt_race = "raid_random";
     // Set the average duration after getting the sealed chaos urn fear effect where it is dispelled.
     timespan_t sealed_chaos_urn_dispell_time = 2.5_s;
     // Set weather you expect to be dispelled by a healer when getting the sealed chaos urn fear.
@@ -913,13 +811,15 @@ struct player_t : public actor_t
     // Interval between checking sunfire silk trappings uptime
     timespan_t sunfire_silk_trappings_update_interval = 10_s;
     timespan_t sunfire_silk_trappings_update_interval_stddev = 2.5_s;
-    // Chance refueling orb will count as healing.
-    double refueling_orb_heal_chance = 0.10;
+    // Chance refueling orb will count as healing. Increased because of pet bug.
+    double refueling_orb_heal_chance = 0.50;
     bool crucible_of_erratic_energies_violence = false;
     bool crucible_of_erratic_energies_sustenance = false;
     bool crucible_of_erratic_energies_predation = false;
     // Chance to miss vessel of tortured souls orb
-    double vessel_of_tortured_souls_miss_chance = 0.1;
+    double vessel_of_tortured_souls_miss_chance = 0.6;
+    // Duration multiplier for Lightspire Core's mastery buff
+    double lightspire_core_duration_multiplier = 0.5;
   } midnight_opts;
 
 private:
@@ -1195,7 +1095,6 @@ public:
   { return true; }
   virtual bool validate_actor()
   { return true; }
-  virtual void init_meta_gem();
   virtual void init_resources( bool force = false );
   virtual std::vector<std::string> get_item_actions();
   virtual std::vector<std::string> get_profession_actions();
@@ -1238,7 +1137,7 @@ public:
   virtual void init_uptimes();
   virtual void init_benefits();
   virtual void init_rng();
-  virtual void init_stats();
+  virtual void init_stat_data();
   virtual void init_distance_targeting();
   virtual void init_absorb_priority();
   virtual void init_assessors();
@@ -1305,14 +1204,14 @@ public:
   virtual double composite_dodge() const;
   virtual double composite_parry() const;
   virtual double composite_block() const;
-  virtual double composite_block_reduction( action_state_t* s ) const;
-  virtual double composite_crit_block() const;
+  virtual double composite_block_value( const action_state_t* s ) const;
   virtual double composite_crit_avoidance() const;
   virtual double composite_attack_power_multiplier() const;
   virtual double composite_spell_power_multiplier() const;
   virtual double matching_gear_multiplier( attribute_e /* attr */ ) const;
   /// Player-wide school based multipliers
   virtual double composite_player_multiplier( school_e ) const;
+  virtual double composite_versus_multiplier( player_t* ) const;
   /// Persistent multipliers that are snapshot at the beginning of the spell application/execution
   virtual double composite_persistent_multiplier( school_e ) const { return 1.0; }
   virtual double composite_player_target_multiplier( player_t*, school_e school ) const;
@@ -1328,7 +1227,9 @@ public:
   virtual double composite_player_target_armor( player_t* ) const;
   virtual double composite_player_healing_received_multiplier() const;
   virtual double composite_player_absorb_received_multiplier() const;
-  virtual double composite_mitigation_multiplier( school_e ) const;
+  virtual double composite_mitigation_multiplier( const action_state_t*, school_e, bool direct ) const;
+  virtual double composite_mitigation_from_player_multiplier( player_t*, const action_state_t*, school_e,
+                                                              bool direct ) const;
   virtual double non_stacking_movement_modifier() const;
   virtual double stacking_movement_modifier() const;
   virtual double composite_movement_speed() const;
@@ -1427,13 +1328,28 @@ public:
   virtual void cost_reduction_loss( school_e school, double amount, action_t* a = nullptr );
   virtual void collect_resource_timeline_information();
 
+  virtual block_result_e target_block_resolution( const action_state_t* ) const
+  { return BLOCK_RESULT_UNBLOCKED; }
   virtual void assess_damage( school_e, result_amount_type, action_state_t* );
   virtual void target_mitigation( school_e, result_amount_type, action_state_t* );
   virtual void assess_damage_imminent_pre_absorb( school_e, result_amount_type, action_state_t* );
   virtual void assess_damage_imminent( school_e, result_amount_type, action_state_t* );
   virtual void do_damage( action_state_t* );
+
+  virtual bool has_absorb() const { return false; }
+  virtual double current_absorb_amount() const { return 0.0; }
+
   virtual void assess_heal( school_e, result_amount_type, action_state_t* );
-  virtual void trigger_callbacks( proc_types, proc_types2, action_t*, action_state_t* );
+  virtual void trigger_callbacks( proc_types, proc_types2, action_t* action, action_state_t* state,
+                                  proc_trigger_type_e pt_type = TRIGGER_ACTION );
+  virtual void trigger_callbacks( proc_types, proc_types2, buff_t* buff,
+                                  proc_trigger_type_e pt_type = TRIGGER_AURA_APPLIED );
+  virtual void trigger_callbacks( proc_types, proc_types2, const proc_data_t& data, player_t* target,
+                                  proc_trigger_type_e pt_type );
+  virtual void trigger_aura_applied_callbacks( const proc_data_t& data, player_t* target );
+  template <typename T>
+  void trigger_aura_applied_callbacks( T, player_t* )  // prevent implicit construction of proc_data_t
+  { static_assert( static_false<T>, "trigger_aura_applied_callbacks must be called with a proc_data_t&" ); }
 
   virtual bool taunt( player_t* /* source */ ) { return false; }
 
@@ -1451,7 +1367,7 @@ public:
 
   virtual action_t* create_action( util::string_view name, util::string_view options );
   virtual void      create_pets() { }
-  virtual void      create_permanent_actors() { }
+  virtual void      create_permanent_actors();
 
   virtual pet_t*    create_pet( util::string_view name,  util::string_view type = {} );
 
@@ -1469,9 +1385,6 @@ public:
 
   player_t* get_owner_or_self()
   { return const_cast<player_t*>(static_cast<const player_t*>(this) -> get_owner_or_self()); }
-
-  // T18 Hellfire Citadel class trinket detection
-  virtual bool has_t18_class_trinket() const;
 
   // Targetdata stuff
   virtual const actor_target_data_t* find_target_data( const player_t* /* target */ ) const
@@ -1578,7 +1491,7 @@ public:
   assessor::state_assessor_pipeline_t assessor_out_damage;
 
   /// Start-of-combat effects
-  using combat_begin_fn_t = std::function<void(player_t*)>;
+  using combat_begin_fn_t = std::function<void( player_t* )>;
   std::vector<combat_begin_fn_t> combat_begin_functions;
   std::vector<combat_begin_fn_t> precombat_begin_functions;
 
@@ -1604,6 +1517,9 @@ public:
 
   // buffs that grant increased damage based on target creature type
   void register_creature_type_buff( buff_t*, const spell_data_t* = spell_data_t::nil() );
+
+  // trigger buff at a list of timestamps starting from beginning of combat
+  void register_timed_buff_triggers( buff_t*, const std::vector<timespan_t>&, timespan_t duration = timespan_t::min() );
 
   void update_off_gcd_ready();
   void update_cast_while_casting_ready();

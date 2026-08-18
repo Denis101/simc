@@ -25,21 +25,21 @@ struct proc_parse_opt_t
 
 constexpr proc_parse_opt_t __proc_opts[] =
 {
-  { "genericspell", PF_NONE_SPELL                                               },
-  { "spell",        PF_MAGIC_SPELL | PF_PERIODIC                                },
-  { "directspell",  PF_MAGIC_SPELL                                              },
-  { "periodic",     PF_PERIODIC                                                 },
-  { "genericheal",  PF_NONE_HEAL                                                },
-  { "heal",         PF_MAGIC_HEAL | PF_PERIODIC                                 },
-  { "directheal",   PF_MAGIC_HEAL                                               },
-  { "attack",       PF_MELEE | PF_MELEE_ABILITY | PF_RANGED | PF_RANGED_ABILITY },
-  { "wattack",      PF_MELEE | PF_RANGED                                        },
-  { "sattack",      PF_MELEE_ABILITY | PF_RANGED_ABILITY                        },
-  { "melee",        PF_MELEE | PF_MELEE_ABILITY                                 },
-  { "wmelee",       PF_MELEE                                                    },
-  { "smelee",       PF_MELEE_ABILITY                                            },
-  { "wranged",      PF_RANGED                                                   },
-  { "sranged",      PF_RANGED_ABILITY                                           },
+  { "genericharmful",  PF_NONE_HARMFUL                                             },
+  { "spell",           PF_MAGIC_SPELL | PF_PERIODIC                                },
+  { "directspell",     PF_MAGIC_SPELL                                              },
+  { "periodic",        PF_PERIODIC                                                 },
+  { "generichelpful",  PF_NONE_HELPFUL                                             },
+  { "heal",            PF_MAGIC_HEAL | PF_PERIODIC                                 },
+  { "directheal",      PF_MAGIC_HEAL                                               },
+  { "attack",          PF_MELEE | PF_MELEE_ABILITY | PF_RANGED | PF_RANGED_ABILITY },
+  { "wattack",         PF_MELEE | PF_RANGED                                        },
+  { "sattack",         PF_MELEE_ABILITY | PF_RANGED_ABILITY                        },
+  { "melee",           PF_MELEE | PF_MELEE_ABILITY                                 },
+  { "wmelee",          PF_MELEE                                                    },
+  { "smelee",          PF_MELEE_ABILITY                                            },
+  { "wranged",         PF_RANGED                                                   },
+  { "sranged",         PF_RANGED_ABILITY                                           },
 };
 
 constexpr proc_parse_opt_t __proc2_opts[] =
@@ -107,9 +107,9 @@ void special_effect_t::reset()
   reverse_stack_reduction = 0;
 
   can_proc_from_procs_ = false;
-  can_only_proc_from_class_abilites_ = false;
+  can_only_proc_from_class_abilities_ = false;
   override_can_proc_from_procs = false;
-  override_can_only_proc_from_class_abilites = false;
+  override_can_only_proc_from_class_abilities = false;
 
   // Must match buff creator defaults for now
   max_stacks = -1;
@@ -313,7 +313,7 @@ stat_buff_t* special_effect_t::initialize_stat_buff() const
   // Setup the spell for the stat buff
   if ( trigger()->id() > 0 )
     spell_data = trigger();
-  else if ( driver()->id() > 0 )
+  else if ( spell_id > 0 )
     spell_data = driver();
 
   stat_buff_t* buff =
@@ -384,7 +384,7 @@ absorb_buff_t* special_effect_t::initialize_absorb_buff() const
   {
     buff_spell = trigger();
   }
-  else if ( driver()->id() > 0 )
+  else if ( spell_id > 0 )
   {
     buff_spell = driver();
   }
@@ -441,27 +441,31 @@ special_effect_buff_e special_effect_t::buff_type() const
 
 buff_t* special_effect_t::create_buff() const
 {
-  if ( buff_type() != SPECIAL_EFFECT_BUFF_CUSTOM && buff_type() != SPECIAL_EFFECT_BUFF_NONE &&
-       buff_type() != SPECIAL_EFFECT_BUFF_DISABLED )
-  {
-    buff_t* b = buff_t::find( player, name() );
-    if ( b )
-    {
-      return b;
-    }
-  }
+  buff_t* buff = nullptr;
 
   switch ( buff_type() )
   {
     case SPECIAL_EFFECT_BUFF_CUSTOM:
-      return custom_buff;
+      buff = custom_buff;
+      break;
     case SPECIAL_EFFECT_BUFF_STAT:
-      return initialize_stat_buff();
+      buff = initialize_stat_buff();  // method has buff_t::find
+      break;
     case SPECIAL_EFFECT_BUFF_ABSORB:
-      return initialize_absorb_buff();
+      buff = initialize_absorb_buff();  // method has buff_t::find
+      break;
+    case SPECIAL_EFFECT_BUFF_NONE:
+    case SPECIAL_EFFECT_BUFF_DISABLED:
+      break;
     default:
-      return nullptr;
+      buff = buff_t::find( player, name() );
+      break;
   }
+
+  if ( buff && !range::contains( buff_list, buff ) )
+    buff_list.push_back( buff );
+
+  return buff;
 }
 
 action_t* special_effect_t::create_action() const
@@ -547,7 +551,7 @@ spell_t* special_effect_t::initialize_resource_action() const
   // Setup the spell data
   if ( trigger()->id() > 0 )
     s = trigger();
-  else if ( driver()->id() > 0 )
+  else if ( spell_id > 0 )
     s = driver();
 
   auto spell =
@@ -617,7 +621,7 @@ heal_t* special_effect_t::initialize_heal_action() const
   // Setup the spell data
   if ( trigger()->id() > 0 )
     s = trigger();
-  else if ( driver()->id() > 0 )
+  else if ( spell_id > 0 )
     s = driver();
 
   auto heal = new unique_gear::proc_heal_t( name(), player, s, source == SPECIAL_EFFECT_SOURCE_ITEM ? item : nullptr );
@@ -652,7 +656,7 @@ attack_t* special_effect_t::initialize_attack_action() const
   // Setup the spell data
   if ( trigger()->id() > 0 )
     s = trigger();
-  else if ( driver()->id() > 0 )
+  else if ( spell_id > 0 )
     s = driver();
 
   auto attack =
@@ -714,7 +718,7 @@ unsigned special_effect_t::rppm_scale() const
     return 0;
   }
 
-  return player->dbc->real_ppm_scale( driver()->id() );
+  return player->dbc->real_ppm_scale( spell_id );
 }
 
 double special_effect_t::rppm_modifier() const
@@ -729,7 +733,7 @@ double special_effect_t::rppm_modifier() const
     return 0.0;
   }
 
-  return player->dbc->real_ppm_modifier( driver()->id(), player, item ? item->item_level() : 0 );
+  return player->dbc->real_ppm_modifier( spell_id, player, item ? item->item_level() : 0 );
 }
 
 /**
@@ -783,10 +787,15 @@ bool special_effect_t::can_proc_from_suppressed() const
   return driver()->flags( spell_attribute::SX_CAN_PROC_FROM_SUPPRESSED );
 }
 
-bool special_effect_t::can_only_proc_from_class_abilites() const
+bool special_effect_t::can_proc_from_suppressed_target() const
 {
-  if ( override_can_only_proc_from_class_abilites )
-    return can_only_proc_from_class_abilites_;
+  return driver()->flags( spell_attribute::SX_CAN_PROC_FROM_SUPPRESSED_TGT );
+}
+
+bool special_effect_t::can_only_proc_from_class_abilities() const
+{
+  if ( override_can_only_proc_from_class_abilities )
+    return can_only_proc_from_class_abilities_;
 
   return driver()->flags( spell_attribute::SX_ONLY_PROC_FROM_CLASS_ABILITIES );
 }
@@ -797,10 +806,10 @@ void special_effect_t::set_can_proc_from_procs( bool value )
   can_proc_from_procs_ = value;
 }
 
-void special_effect_t::set_can_only_proc_from_class_abilites( bool value )
+void special_effect_t::set_can_only_proc_from_class_abilities( bool value )
 {
-  override_can_only_proc_from_class_abilites = true;
-  can_only_proc_from_class_abilites_ = value;
+  override_can_only_proc_from_class_abilities = true;
+  can_only_proc_from_class_abilities_ = value;
 }
 
 timespan_t special_effect_t::duration() const
@@ -1174,7 +1183,7 @@ bool special_effect::usable_proc( const special_effect_t& effect )
   {
     if ( effect.item )
     {
-      effect.item->sim->print_debug( "Effect '{}' no proc flags / trigger type", effect.name() );
+      effect.item->sim->print_debug( "'{}' no proc flags / trigger type", effect );
     }
     return false;
   }
@@ -1184,7 +1193,7 @@ bool special_effect::usable_proc( const special_effect_t& effect )
   {
     if ( effect.item )
     {
-      effect.item->sim->print_debug( "Effect '{}' No RPPM / PPM / Proc chance", effect.name() );
+      effect.item->sim->print_debug( "'{}' No RPPM / PPM / Proc chance", effect );
     }
     return false;
   }
@@ -1194,7 +1203,7 @@ bool special_effect::usable_proc( const special_effect_t& effect )
   {
     if ( effect.item )
     {
-      effect.item->sim->print_debug( "Effect '{}' No constructible buff or action", effect.name() );
+      effect.item->sim->print_debug( "'{}' No constructible buff or action", effect );
     }
     return false;
   }
@@ -1217,13 +1226,13 @@ std::string special_effect_t::cooldown_name() const
   }
 
   std::string n;
-  if ( driver()->id() > 0 )
+  if ( spell_id > 0 )
   {
     n = driver()->name_cstr();
     // Append the spell ID of the driver to the cooldown name. In some cases, the
     // drivers of different trinket procs are actually named identically, causing
     // issues when the trinkets are worn.
-    n += "_" + util::to_string( driver()->id() );
+    n += "_" + util::to_string( spell_id );
   }
   else if ( item )
   {

@@ -237,10 +237,7 @@ void celestial_guidance( special_effect_t& effect )
   if ( !effect.custom_buff )
   {
     effect.custom_buff = make_buff<SL_buff_t>( effect.player, "celestial_guidance", effect.player->find_spell( 324748 ) )
-      ->set_default_value_from_effect_type( A_MOD_TOTAL_STAT_PERCENTAGE )
-      ->set_pct_buff_type( STAT_PCT_BUFF_STRENGTH )
-      ->set_pct_buff_type( STAT_PCT_BUFF_AGILITY )
-      ->set_pct_buff_type( STAT_PCT_BUFF_INTELLECT );
+      ->set_pct_buff_type_from_data( true );
   }
 
   new dbc_proc_callback_t( effect.player, effect );
@@ -281,11 +278,11 @@ void sinful_revelation( special_effect_t& effect )
   {
     sinful_revelation_cb_t( const special_effect_t& e ) : dbc_proc_callback_t( e.player, e ) {}
 
-    void execute( action_t* a, action_state_t* s ) override
+    void execute( const spell_data_t* spell, player_t* t, action_state_t* s ) override
     {
-      dbc_proc_callback_t::execute( a, s );
+      dbc_proc_callback_t::execute( spell, t, s );
 
-      auto td = a->player->get_target_data( s->target );
+      auto td = listener->get_target_data( t );
       td->debuff.sinful_revelation->trigger();
     }
   };
@@ -644,11 +641,11 @@ void memory_of_past_sins( special_effect_t& effect )
     {
     }
 
-    void execute( action_t*, action_state_t* trigger_state ) override
+    void execute( const spell_data_t*, player_t* t, action_state_t* ) override
     {
       if ( buff->check() )
       {
-        damage->set_target( trigger_state->target );
+        damage->set_target( t );
         damage->execute();
         buff->decrement();
       }
@@ -801,14 +798,14 @@ void hateful_chain( special_effect_t& effect )
   {
     using dbc_proc_callback_t::dbc_proc_callback_t;
 
-    void execute( action_t*, action_state_t* state ) override
+    void execute( const spell_data_t*, player_t* t, action_state_t* s ) override
     {
-      if ( state->target->is_sleeping() )
+      if ( t->is_sleeping() )
         return;
 
       // XXX: Assume the actor always has more health than the target
       // TODO: Handle actor health < target health case?
-      proc_action->target = target( state );
+      proc_action->target = get_target( t, s );
       proc_action->schedule_execute();
     }
   };
@@ -1183,7 +1180,7 @@ void infinitely_divisible_ooze( special_effect_t& effect )
       spawner.set_default_duration( e.player->find_spell( 345489 )->duration() );
     }
 
-    void execute( action_t*, action_state_t* ) override
+    void execute( const spell_data_t*, player_t*, action_state_t* ) override
     {
       spawner.spawn();
     }
@@ -1229,7 +1226,6 @@ void infinitely_divisible_ooze( special_effect_t& effect )
  */
 void inscrutable_quantum_device ( special_effect_t& effect )
 {
-  static constexpr std::array<stat_e, 4> ratings = { STAT_VERSATILITY_RATING, STAT_MASTERY_RATING, STAT_HASTE_RATING, STAT_CRIT_RATING };
   static constexpr std::array<int, 4> buff_ids = { 330367, 330380, 330368, 330366 };
 
   struct inscrutable_quantum_device_execute_t : public proc_spell_t
@@ -1258,16 +1254,16 @@ void inscrutable_quantum_device ( special_effect_t& effect )
       proc_spell_t( "inscrutable_quantum_device", e.player, e.player->find_spell( 330323 ) )
     {
       buffs[ STAT_NONE ] = nullptr;
-      for ( unsigned i = 0; i < ratings.size(); i++ )
+      for ( unsigned i = 0; i < secondary_ratings.size(); i++ )
       {
-        auto name = std::string( "inscrutable_quantum_device_" ) + util::stat_type_string( ratings[ i ] );
+        auto name = std::string( "inscrutable_quantum_device_" ) + util::stat_type_string( secondary_ratings[ i ] );
         stat_buff_t* buff = debug_cast<stat_buff_t*>( buff_t::find( e.player, name ) );
         if ( !buff )
         {
           buff = make_buff<stat_buff_t>( e.player, name, e.player->find_spell( buff_ids[ i ] ), e.item );
           buff->set_cooldown( 0_ms );
         }
-        buffs[ ratings[ i ] ] = buff;
+        buffs[ secondary_ratings[ i ] ] = buff;
       }
       execute_damage = create_proc_action<inscrutable_quantum_device_execute_t>( "inscrutable_quantum_device_execute", e );
     }
@@ -1310,7 +1306,7 @@ void inscrutable_quantum_device ( special_effect_t& effect )
         buff_t* buff;
         timespan_t duration_adjustment;
 
-        s1 = util::highest_stat( player, ratings );
+        s1 = util::highest_stat( player, secondary_ratings );
 
         if ( is_buff_extended() )
         {
@@ -1321,7 +1317,7 @@ void inscrutable_quantum_device ( special_effect_t& effect )
         {
           if ( rng().roll( sim->shadowlands_opts.iqd_stat_fail_chance ) )
             return;
-          for ( auto s : ratings )
+          for ( auto s : secondary_ratings )
           {
             auto v = util::stat_value( player, s );
             if ( ( s2 == STAT_NONE || v > util::stat_value( player, s2 ) ) &&
@@ -1365,18 +1361,18 @@ void phial_of_putrefaction( special_effect_t& effect )
     phial_of_putrefaction_proc_t( const special_effect_t* e ) :
       dbc_proc_callback_t( e->player, *e ) { }
 
-    void execute( action_t*, action_state_t* s ) override
+    void execute( const spell_data_t*, player_t* t, action_state_t* ) override
     {
       // Only allow one proc on simultaneous hits
       if ( !proc_buff->check() )
         return;
 
       // Targets at max stacks do not 'eat' proc attempts or consume the player buff
-      auto d = proc_action->get_dot( s->target );
+      auto d = proc_action->get_dot( t );
       if ( !d->is_ticking() || !d->at_max_stacks() )
       {
         proc_buff->expire();
-        proc_action->set_target( s->target );
+        proc_action->set_target( t );
         proc_action->execute();
       }
     }
@@ -1469,7 +1465,7 @@ void anima_field_emitter( special_effect_t& effect )
                    e.player->find_spell( 345534 )->duration() )
     { }
 
-    void execute( action_t*, action_state_t* ) override
+    void execute( const spell_data_t*, player_t*, action_state_t* ) override
     {
       timespan_t buff_duration = _duration.max;
       if ( _duration.mean != 0_ms )
@@ -1685,14 +1681,14 @@ void hymnal_of_the_path( special_effect_t& effect )
   {
     using dbc_proc_callback_t::dbc_proc_callback_t;
 
-    void execute( action_t*, action_state_t* state ) override
+    void execute( const spell_data_t*, player_t* t, action_state_t* s ) override
     {
-      if ( state->target->is_sleeping() )
+      if ( t->is_sleeping() )
         return;
 
       // XXX: Assume the actor always has more health than the target
       // TODO: Handle actor health < target health case?
-      proc_action->set_target( target( state ) );
+      proc_action->set_target( get_target( t, s ) );
       proc_action->schedule_execute();
     }
   };
@@ -1931,7 +1927,7 @@ void forbidden_necromantic_tome( special_effect_t& effect )  // NYI: Battle Rezz
   {
     using dbc_proc_callback_t::dbc_proc_callback_t;
 
-    void execute( action_t*, action_state_t* ) override
+    void execute( const spell_data_t*, player_t*, action_state_t* ) override
     {
       if ( proc_buff->at_max_stacks() )
         return;
@@ -2026,12 +2022,12 @@ void tormentors_rack_fragment( special_effect_t& effect )
   {
     using dbc_proc_callback_t::dbc_proc_callback_t;
 
-    void execute( action_t*, action_state_t* state ) override
+    void execute( const spell_data_t*, player_t* t, action_state_t* s ) override
     {
-      if ( state->target->is_sleeping() )
+      if ( t->is_sleeping() )
         return;
 
-      proc_action->target = target( state );
+      proc_action->target = get_target( t, s );
       proc_action->schedule_execute();
     }
   };
@@ -2095,11 +2091,11 @@ void salvaged_fusion_amplifier( special_effect_t& effect)
     {
     }
 
-    void execute( action_t*, action_state_t* trigger_state ) override
+    void execute( const spell_data_t*, player_t* t, action_state_t* ) override
     {
       if ( buff->check() )
       {
-        damage->set_target( trigger_state->target );
+        damage->set_target( t );
         damage->execute();
       }
     }
@@ -2163,12 +2159,12 @@ void miniscule_mailemental_in_an_envelope( special_effect_t& effect )
   {
     using dbc_proc_callback_t::dbc_proc_callback_t;
 
-    void execute( action_t*, action_state_t* state ) override
+    void execute( const spell_data_t*, player_t* t, action_state_t* s ) override
     {
-      if ( state->target->is_sleeping() )
+      if ( t->is_sleeping() )
         return;
 
-      proc_action->target = target( state );
+      proc_action->target = get_target( t, s );
       proc_action->schedule_execute();
     }
   };
@@ -2185,16 +2181,13 @@ void miniscule_mailemental_in_an_envelope( special_effect_t& effect )
  */
 void titanic_ocular_gland( special_effect_t& effect )
 {
-  // When selecting the highest stat, the priority of equal secondary stats is Vers > Mastery > Haste > Crit.
-  static constexpr std::array<stat_e, 4> ratings = { STAT_VERSATILITY_RATING, STAT_MASTERY_RATING, STAT_HASTE_RATING, STAT_CRIT_RATING };
-
   // Use a separate buff for each rating type so that individual uptimes are reported nicely and APLs can easily reference them.
   // Store these in pointers to reduce the size of the events that use them.
   auto worthy_buffs = std::make_shared<std::map<stat_e, buff_t*>>();
   auto unworthy_buffs = std::make_shared<std::map<stat_e, buff_t*>>();
   double amount = effect.driver()->effectN( 1 ).average( effect.item );
 
-  for ( auto stat : ratings )
+  for ( auto stat : secondary_ratings )
   {
     auto name = std::string( "worthy_" ) + util::stat_type_string( stat );
     buff_t* buff = buff_t::find( effect.player, name );
@@ -2223,11 +2216,11 @@ void titanic_ocular_gland( special_effect_t& effect )
   {
     bool worthy = p->rng().roll( p->sim->shadowlands_opts.titanic_ocular_gland_worthy_chance );
     bool buff_active = false;
-    stat_e max_stat = util::highest_stat( p, ratings );
+    stat_e max_stat = util::highest_stat( p, secondary_ratings );
 
     // Iterate over all of the buffs and expire any that should not be active. Only one buff is
     // active at a time, so this process only needs to continue until a single active buff is found.
-    for ( auto stat : ratings )
+    for ( auto stat : secondary_ratings )
     {
       if ( ( *worthy_buffs )[ stat ]->check() )
       {
@@ -2236,7 +2229,7 @@ void titanic_ocular_gland( special_effect_t& effect )
         if ( max_stat != stat || !worthy )
         {
           ( *worthy_buffs )[ stat ]->expire();
-          max_stat = util::highest_stat( p, ratings );
+          max_stat = util::highest_stat( p, secondary_ratings );
         }
         else
         {
@@ -2250,7 +2243,7 @@ void titanic_ocular_gland( special_effect_t& effect )
         if ( worthy )
         {
           ( *unworthy_buffs )[ stat ]->expire();
-          max_stat = util::highest_stat( p, ratings );
+          max_stat = util::highest_stat( p, secondary_ratings );
         }
         else
         {
@@ -2685,11 +2678,11 @@ void ticking_sack_of_terror( special_effect_t& effect )
         } );
     }
 
-    void execute( action_t* a, action_state_t* s ) override
+    void execute( const spell_data_t* spell, player_t* t, action_state_t* s ) override
     {
-      dbc_proc_callback_t::execute( a, s );
+      dbc_proc_callback_t::execute( spell, t, s );
 
-      auto debuff = get_debuff( s->target );
+      auto debuff = get_debuff( t );
 
       // Damage is dealt when the debuff falls off *or* reaches max stacks, whichever comes first
       if ( debuff->at_max_stacks() )
@@ -2719,7 +2712,7 @@ void soleahs_secret_technique( special_effect_t& effect )
 
   std::string_view opt_str = effect.player->sim->shadowlands_opts.soleahs_secret_technique_type;
   // Override with player option if defined
-  if ( !effect.player->shadowlands_opts.soleahs_secret_technique_type.current_value.empty() )
+  if ( !effect.player->shadowlands_opts.soleahs_secret_technique_type.is_default() )
   {
     opt_str = effect.player->shadowlands_opts.soleahs_secret_technique_type;
   }
@@ -2906,7 +2899,7 @@ void brokers_lucky_coin( special_effect_t& effect )
       tails->stats[ 0 ].amount = e.driver()->effectN( 1 ).average( effect.item );
     }
 
-    void execute( action_t*, action_state_t* ) override
+    void execute( const spell_data_t*, player_t*, action_state_t* ) override
     {
       if ( rng().roll( 0.5 ) )
         heads->trigger();
@@ -3283,17 +3276,13 @@ void cosmic_gladiators_resonator( special_effect_t& effect )
 
 void elegy_of_the_eternals( special_effect_t& effect )
 {
-  // TODO: confirm stat priority when stats are equal. for now assuming same as titanic ocular gland
-  static constexpr std::array<stat_e, 4> ratings = { STAT_VERSATILITY_RATING, STAT_MASTERY_RATING, STAT_HASTE_RATING,
-                                                     STAT_CRIT_RATING };
-
   auto buff_list = std::make_shared<std::map<stat_e, buff_t*>>();
 
   // TODO: 369544 has same data as the driver, but with the presumably correct -7 scaling effect. Confirm that the
   // driver really is 367246 and that 369544 is an unreferenced placeholder spell for the correct scaling effect.
   double amount = effect.player->find_spell( 369544 )->effectN( 1 ).average( effect.item );
 
-  for ( auto stat : ratings )
+  for ( auto stat : secondary_ratings )
   {
     auto name = fmt::format( "elegy_of_the_eternals_{}", util::stat_type_abbrev( stat ) );
     auto buff = buff_t::find( effect.player, name );
@@ -3308,16 +3297,16 @@ void elegy_of_the_eternals( special_effect_t& effect )
   }
 
   auto update_buffs = [ p = effect.player, buff_list ]() mutable {
-    auto max_stat = util::highest_stat( p, ratings );
+    auto max_stat = util::highest_stat( p, secondary_ratings );
 
-    for ( auto stat : ratings )
+    for ( auto stat : secondary_ratings )
     {
       if ( ( *buff_list )[ stat ]->check() )
       {
         if ( max_stat != stat )
         {
           ( *buff_list )[ stat ]->expire();
-          max_stat = util::highest_stat( p, ratings );
+          max_stat = util::highest_stat( p, secondary_ratings );
         }
 
         break;
@@ -3382,18 +3371,18 @@ void bells_of_the_endless_feast( special_effect_t& effect )
         ->set_cooldown( 0_ms );
     }
 
-    void execute( action_t* a, action_state_t* s ) override
+    void execute( const spell_data_t* spell, player_t* t, action_state_t* s ) override
     {
-      dbc_proc_callback_t::execute( a, s );
+      dbc_proc_callback_t::execute( spell, t, s );
 
-      auto debuff = get_debuff( s->target );
+      auto debuff = get_debuff( t );
 
       // NOTE: Damage triggers on the next tick of the debuff after it reaches max stacks, but I'm not sure if it's
       // worth modeling that properly, so we instead trigger it as soon as it reaches max stacks.
       if ( debuff->at_max_stacks() )
       {
         debuff->expire();
-        damage->execute_on_target( s->target );
+        damage->execute_on_target( t );
       }
       else
       {
@@ -3821,7 +3810,7 @@ void prismatic_brilliance( special_effect_t& effect )
   new dbc_proc_callback_t( effect.player, effect );
 
   effect.player->callbacks.register_callback_execute_function(
-      effect.driver()->id(), [ buffs ]( const dbc_proc_callback_t* cb, action_t*, action_state_t* ) {
+      effect.spell_id, [ buffs ]( const dbc_proc_callback_t* cb, auto, auto, auto ) {
         cb->rng().range( buffs )->trigger();
       } );
 }
@@ -3851,9 +3840,9 @@ struct chains_of_domination_cb_t : public dbc_proc_callback_t
   {
   }
 
-  void execute( action_t*, action_state_t* s ) override
+  void execute( const spell_data_t*, player_t* t, action_state_t* s ) override
   {
-    if ( debuff && debuff->check() && s->target == debuff->player )
+    if ( debuff && debuff->check() && t == debuff->player )
     {
       accumulated_damage = std::min( damage_cap, accumulated_damage + ( s->result_amount * damage_fraction ) );
       if ( auto_break && accumulated_damage >= damage_cap )
@@ -4137,7 +4126,7 @@ void cruciform_veinripper(special_effect_t& effect)
     {
     }
 
-    void trigger( action_t* a, action_state_t* s ) override
+    void trigger( const proc_data_t& data, player_t* t, action_state_t* s, proc_trigger_type_e type ) override
     {
       assert( rppm );
       assert( s->target );
@@ -4152,7 +4141,7 @@ void cruciform_veinripper(special_effect_t& effect)
         // CC'd/Snared mobs appear to take the full proc rate, which does not work on bosses
         // The "from behind" rate is roughly half the CC'd target rate in the spell data
         proc_modifier = 0.5;
-        if ( a->player->position() == POSITION_FRONT )
+        if ( listener->position() == POSITION_FRONT )
         {
           if ( proc_modifier_in_front_override > 0.0 )
           {
@@ -4165,7 +4154,7 @@ void cruciform_veinripper(special_effect_t& effect)
             //
             // When the role is not tank, this is explicitly set to 0 to allow DPS to model bosses where
             // they can't hit from behind.
-            proc_modifier *= a->player->primary_role() == ROLE_TANK ? 0.4 : 0.0;
+            proc_modifier *= listener->primary_role() == ROLE_TANK ? 0.4 : 0.0;
           }
         }
       }
@@ -4173,11 +4162,12 @@ void cruciform_veinripper(special_effect_t& effect)
       if ( proc_modifier != rppm->get_modifier() )
       {
         effect.player->sim->print_debug( "Player {} (position: {}, role: {}) adjusts {} rppm modifer: old={} new={}",
-                                         *a->player, a->player->position(), a->player->primary_role(), effect, rppm->get_modifier(), proc_modifier);
+                                         *listener, listener->position(), listener->primary_role(), effect,
+                                         rppm->get_modifier(), proc_modifier );
         rppm->set_modifier( proc_modifier );
       }
 
-      dbc_proc_callback_t::trigger( a, s );
+      dbc_proc_callback_t::trigger( data, t, s, type );
     }
   };
 
@@ -4261,8 +4251,8 @@ void singularity_supreme( special_effect_t& effect )
   new dbc_proc_callback_t( effect.player, effect );
 
   effect.player->callbacks.register_callback_trigger_function(
-      effect.driver()->id(), dbc_proc_callback_t::trigger_fn_type::CONDITION,
-      [ singularity_buff ]( const dbc_proc_callback_t*, action_t*, action_state_t* ) {
+      effect.spell_id, dbc_proc_callback_t::trigger_fn_type::CONDITION,
+      [ singularity_buff ]( auto, const auto&, auto, auto, auto ) {
         return !singularity_buff->lockout->check();
       } );
 }
@@ -4662,7 +4652,7 @@ void soulwarped_seal_of_wrynn( special_effect_t& effect )
     {
     }
 
-    void trigger( action_t* a, action_state_t* s ) override
+    void trigger( const proc_data_t& data, player_t* t, action_state_t* s, proc_trigger_type_e type ) override
     {
       assert( rppm );
       assert( s->target );
@@ -4689,7 +4679,7 @@ void soulwarped_seal_of_wrynn( special_effect_t& effect )
         rppm->set_modifier( mod );
       }
 
-      dbc_proc_callback_t::trigger( a, s );
+      dbc_proc_callback_t::trigger( data, t, s, type );
     }
   };
 
@@ -4721,16 +4711,16 @@ void soulwarped_seal_of_menethil( special_effect_t& effect )
     {
     }
 
-    void trigger( action_t* a, action_state_t* s ) override
+    void trigger( const proc_data_t& data, player_t* t, action_state_t* s, proc_trigger_type_e type ) override
     {
       assert( rppm );
-      assert( s->target );
+      assert( t );
 
       // Below 70% HP, proc rate appears to be 2rppm
       double mod = 0.150;
 
       // Above 70% HP, proc rate appears to be the full 20rppm.
-      if ( s -> target -> health_percentage() >= 70 )
+      if ( t->health_percentage() >= 70 )
 		mod = 1;
 
       if ( effect.player->sim->debug )
@@ -4741,13 +4731,13 @@ void soulwarped_seal_of_menethil( special_effect_t& effect )
 
       rppm->set_modifier( mod );
 
-      dbc_proc_callback_t::trigger( a, s );
+      dbc_proc_callback_t::trigger( data, t, s, type );
     }
 
-    void execute( action_t* a, action_state_t* s ) override
+    void execute( const spell_data_t* spell, player_t* t, action_state_t* s ) override
     {
-      dbc_proc_callback_t::execute( a, s );
-      auto td = a->player->get_target_data( s->target );
+      dbc_proc_callback_t::execute( spell, t, s );
+      auto td = listener->get_target_data( t );
       td->debuff.remnants_despair->set_default_value( debuff_value );
       td->debuff.remnants_despair->trigger();
     }
@@ -4944,8 +4934,8 @@ void branding_blade( special_effect_t& effect )
 
   effect.player->callbacks.register_callback_trigger_function(
       ripped->spell_id, dbc_proc_callback_t::trigger_fn_type::CONDITION,
-      []( const dbc_proc_callback_t*, action_t* a, action_state_t* ) {
-        return a->weapon && a->weapon->slot == SLOT_MAIN_HAND;
+      []( auto, const auto&, auto, const action_state_t* s, auto ) {
+        return s->action->weapon && s->action->weapon->slot == SLOT_MAIN_HAND;
       } );
 
   auto branding_dam =
@@ -4958,9 +4948,9 @@ void branding_blade( special_effect_t& effect )
 
   effect.player->callbacks.register_callback_trigger_function(
       effect.spell_id, dbc_proc_callback_t::trigger_fn_type::CONDITION,
-      [ ripped_dot ]( const dbc_proc_callback_t*, action_t* a, action_state_t* s ) {
-        return a->weapon && a->weapon->slot == SLOT_OFF_HAND && s->target &&
-               ripped_dot->get_dot( s->target )->is_ticking();
+      [ ripped_dot ]( auto, const auto&, player_t* t, const action_state_t* s, auto ) {
+        return s->action->weapon && s->action->weapon->slot == SLOT_OFF_HAND && t &&
+               ripped_dot->get_dot( t )->is_ticking();
       } );
 }
 }  // namespace set_bonus
@@ -5235,4 +5225,29 @@ void register_target_data_initializers( sim_t& sim )
   sim.register_target_data_initializer( remnants_despair_init_t() );
 }
 
+void register_actor_initializers( sim_t& sim )
+{
+  // 20+9 for wow version 9.x
+  sim.register_actor_initializer( INIT_ACTOR_CREATE_BUFFS + 29, []( player_t* p ) {
+    if ( p->external_buffs.soleahs_secret_technique )
+    {
+      struct soleahs_secret_technique_external_t : public external_special_effect_t
+      {
+        soleahs_secret_technique_external_t( player_t* p )
+          : external_special_effect_t( p, "soleahs_secret_technique_external", 190958,
+                                       p->external_buffs.soleahs_secret_technique )
+        {
+          auto stat = util::highest_stat( p, secondary_ratings );
+          auto buff = make_buff<stat_buff_t>( p, "soleahs_secret_technique_external", p->find_spell( 368510 ) )
+            ->add_stat( stat, driver()->effectN( 2 ).average( *this ) )
+            ->set_name_reporting( fmt::format( "External {}", util::stat_type_abbrev( stat ) ) );
+
+          p->register_on_arise_callback( p, [ buff ] { buff->trigger(); } );
+        }
+      };
+
+      p->special_effects.push_back( new soleahs_secret_technique_external_t( p ) );
+    }
+  }, "create_buffs_shadowlands" );
+}
 }  // namespace unique_gear

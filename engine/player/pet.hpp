@@ -67,7 +67,7 @@ public:
   void init_finished() override;
   void reset() override;
   void assess_damage( school_e, result_amount_type, action_state_t* s ) override;
-  void trigger_callbacks( proc_types, proc_types2, action_t*, action_state_t* ) override;
+  void trigger_callbacks( proc_types, proc_types2, action_t*, action_state_t*, proc_trigger_type_e ) override;
 
   virtual void summon( timespan_t duration = timespan_t::zero() );
   virtual void dismiss( bool expired = false );
@@ -123,6 +123,14 @@ public:
   double composite_spell_haste() const override;
 
   double composite_spell_cast_speed() const override;
+
+  // Pets have no mastery of their own. Actions sourced to them can benefit from the owner's mastery, and this should be
+  // handled within the action or the overridden in the dervied pet class.
+  double composite_mastery() const override
+  { return 0.0; }
+
+  double composite_mastery_value() const override
+  { return 0.0; }
 
   double composite_bonus_armor() const override
   { return owner -> cache.bonus_armor(); }

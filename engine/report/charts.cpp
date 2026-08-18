@@ -469,9 +469,9 @@ void profilesets_insert_data( highchart::bar_chart_t& chart,
 
     if ( baseline )
     {
-      color::rgb c( "AA0000" );
-      boxplot_entry.set( "color", c.dark( .5 ).opacity( .5 ).str() );
-      boxplot_entry.set( "fillColor", c.dark( .75 ).opacity( .5 ).rgb_str() );
+      color::rgb base_c( "AA0000" );
+      boxplot_entry.set( "color", base_c.dark( .5 ).opacity( .5 ).str() );
+      boxplot_entry.set( "fillColor", base_c.dark( .75 ).opacity( .5 ).rgb_str() );
     }
     else
     {
@@ -1161,9 +1161,7 @@ bool chart::generate_raid_aps( highchart::bar_chart_t& bc, const sim_t& s, std::
 
       // Also keep track of longest player name
       if ( p->name_str.length() > longest_name )
-      {
         longest_name = p->name_str.length();
-      }
 
       sc_js_t e;
       e.set( "color", c.str() );

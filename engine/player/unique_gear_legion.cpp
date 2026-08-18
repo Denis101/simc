@@ -559,10 +559,8 @@ void item::choker_of_barbed_reins( special_effect_t& effect )
     choker_of_barbed_reins_t( const special_effect_t& e ):
       proc_attack_t( "barbed_rebuke", e.player, e.player -> find_spell( 234108 ), e.item )
     {
-      may_block = true;
+      may_block = ignores_armor = true;
     }
-    double composite_target_armor( player_t* ) const override
-    { return 0.0; }
   };
 
   effect.execute_action = effect.player -> find_action( "barbed_rebuke" );
@@ -637,17 +635,17 @@ struct eye_of_command_cb_t : public dbc_proc_callback_t
     current_target( nullptr ), buff( b )
   { }
 
-  void execute( action_t* /* a */, action_state_t* state ) override
+  void execute( const spell_data_t*, player_t* t, action_state_t* ) override
   {
-    if ( current_target != state -> target )
+    if ( current_target != t )
     {
       if ( current_target != nullptr && listener -> sim -> debug )
       {
         listener -> sim -> out_debug.printf( "%s eye_of_command target reset, old=%s new=%s",
-          listener -> name(), current_target -> name(), state -> target -> name() );
+          listener -> name(), current_target -> name(), t -> name() );
       }
       buff -> expire();
-      current_target = state -> target;
+      current_target = t;
     }
 
     buff -> trigger();
@@ -710,7 +708,7 @@ void item::erratic_metronome( special_effect_t& effect )
       proc_buff = buff;
     }
 
-    void execute(action_t*, action_state_t*) override
+    void execute( const spell_data_t*, player_t*, action_state_t* ) override
     {
       int stack = proc_buff -> check();
 
@@ -771,17 +769,17 @@ struct icon_of_rot_driver_t : public dbc_proc_callback_t
     }
   }
 
-  void execute( action_t*  /*a*/ , action_state_t* trigger_state ) override
+  void execute( const spell_data_t*, player_t* t, action_state_t* ) override
   {
-    actor_target_data_t* td = listener -> get_target_data( trigger_state -> target );
+    actor_target_data_t* td = listener -> get_target_data( t );
     assert( td );
     (void) td;
 
     auto& tl = listener -> sim -> target_non_sleeping_list;
 
-    for ( auto* t : tl )
+    for ( auto _t : tl )
     {
-      carrion_swarm -> target = t;
+      carrion_swarm -> target = _t;
       carrion_swarm -> execute();
     }
   }
@@ -854,9 +852,9 @@ void item::fury_of_the_burning_sky( special_effect_t& effect )
         } );
     }
 
-    void execute( action_t* /*a*/, action_state_t* trigger_state ) override
+    void execute( const spell_data_t*, player_t* t, action_state_t* ) override
     {
-      get_debuff( trigger_state->target )->trigger();
+      get_debuff( t )->trigger();
     }
   };
 
@@ -986,15 +984,15 @@ void item::tarnished_sentinel_medallion( special_effect_t& effect )
     { }
 
 
-    void trigger( action_t* a, action_state_t* state ) override
+    void trigger( const proc_data_t& data, player_t* t, action_state_t* s, proc_trigger_type_e type ) override
     {
       // Owl blast triggers only on the bound target (see below)
-      if ( state -> target != effect.execute_action -> target )
+      if ( t != effect.execute_action -> target )
       {
         return;
       }
 
-      dbc_proc_callback_t::trigger( a, state );
+      dbc_proc_callback_t::trigger( data, t, s, type );
     }
   };
 
@@ -1003,7 +1001,7 @@ void item::tarnished_sentinel_medallion( special_effect_t& effect )
   secondary -> type = SPECIAL_EFFECT_EQUIP;
   secondary -> source = SPECIAL_EFFECT_SOURCE_ITEM;
   // Spell data does not flag AOE spells as being able to proc it
-  secondary -> proc_flags_ = PF_RANGED_ABILITY | PF_RANGED | PF_MAGIC_SPELL | PF_NONE_SPELL | PF_PERIODIC;
+  secondary -> proc_flags_ = PF_RANGED_ABILITY | PF_RANGED | PF_MAGIC_SPELL | PF_NONE_HARMFUL | PF_PERIODIC;
   secondary -> proc_flags2_ = PF2_ALL_HIT;
   secondary -> item = effect.item;
   secondary -> spell_id = effect.spell_id;
@@ -1505,10 +1503,10 @@ struct golganneths_vitality_proc_t : public dbc_proc_callback_t
   { }
 
 protected:
-  void execute( action_t*, action_state_t* state ) override
+  void execute( const spell_data_t*, player_t* t, action_state_t* ) override
   {
     make_event<ground_aoe_event_t>( *effect.player -> sim, effect.player, ground_aoe_params_t()
-        .target( state -> target )
+        .target( t )
         .duration( effect.trigger() -> duration() )
         .action( damage ) );
   }
@@ -1523,7 +1521,7 @@ void item::golganneths_vitality( special_effect_t& effect )
 
 void item::norgannons_prowess( special_effect_t& effect )
 {
-  effect.proc_flags_ = effect.driver() -> proc_flags() | PF_NONE_SPELL;
+  effect.proc_flags_ = effect.driver() -> proc_flags() | PF_NONE_HARMFUL;
   effect.custom_buff = effect.create_buff();
 }
 
@@ -1561,22 +1559,22 @@ struct personnel_decimator_driver_t : public dbc_proc_callback_t
     dbc_proc_callback_t( effect.item, effect )
   { }
 
-  void trigger( action_t* a, action_state_t* state ) override
+  void trigger( const proc_data_t& data, player_t* t, action_state_t* s, proc_trigger_type_e type ) override
   {
     auto distance = effect.driver() -> effectN( 1 ).base_value();
 
-    if ( listener -> get_player_distance( *state -> target ) < distance )
+    if ( listener -> get_player_distance( *t ) < distance )
     {
       return;
     }
 
-    dbc_proc_callback_t::trigger( a, state );
+    dbc_proc_callback_t::trigger( data, t, s, type );
   }
 };
 
 void item::prototype_personnel_decimator( special_effect_t& effect )
 {
-  effect.proc_flags_ = effect.driver() -> proc_flags() | PF_NONE_SPELL;
+  effect.proc_flags_ = effect.driver() -> proc_flags() | PF_NONE_HARMFUL;
   effect.execute_action = create_proc_action<personnel_decimator_t>( "personnel_decimator", effect );
 
   new personnel_decimator_driver_t( effect );
@@ -1593,7 +1591,7 @@ struct injector_proc_cb_t : public dbc_proc_callback_t
     dbc_proc_callback_t( effect.item, effect ), small_buffs( std::move( small_buffs_ ) ), large_buff( large_buff_ )
   { }
 
-  void execute( action_t* /* a */, action_state_t* /* state */ ) override
+  void execute( const spell_data_t*, player_t*, action_state_t* ) override
   {
     auto buff = rng().range( small_buffs );
 
@@ -1608,7 +1606,7 @@ struct injector_proc_cb_t : public dbc_proc_callback_t
 
 void item::acrid_catalyst_injector( special_effect_t& effect )
 {
-  effect.proc_flags_ = effect.driver() -> proc_flags() | PF_NONE_SPELL;
+  effect.proc_flags_ = effect.driver() -> proc_flags() | PF_NONE_HARMFUL;
   effect.proc_flags2_ = PF2_CRIT;
 
   auto p = effect.player;
@@ -1827,7 +1825,7 @@ struct shadow_blades_buff_t : public buff_t
 
 void item::sheath_of_asara( special_effect_t& effect )
 {
-  effect.proc_flags_ = effect.driver() -> proc_flags() | PF_NONE_SPELL;
+  effect.proc_flags_ = effect.driver() -> proc_flags() | PF_NONE_HARMFUL;
   effect.custom_buff = new shadow_blades_buff_t( effect );
   new dbc_proc_callback_t( effect.item, effect );
 }
@@ -1872,7 +1870,7 @@ struct echo_of_gorshalach_cb_t : public dbc_proc_callback_t
     legacy_2( create_proc_action<gorshalach_bigger_legacy_t>( "gorshalachs_legacy_2", effect ) )
   { }
 
-  void execute( action_t* /* a */, action_state_t* /* state */ ) override
+  void execute( const spell_data_t*, player_t*, action_state_t* ) override
   {
     proc_buff -> trigger();
     if ( proc_buff -> check() == proc_buff -> max_stack() )
@@ -2005,7 +2003,7 @@ struct fire_mines_driver_t : public dbc_proc_callback_t
     active_mines.clear();
   }
 
-  void execute( action_t* /* a */, action_state_t* state ) override
+  void execute( const spell_data_t*, player_t* t, action_state_t* ) override
   {
     // Trinket creates two mines per proc.
     for ( int i = 0; i < 2; i++ )
@@ -2013,9 +2011,9 @@ struct fire_mines_driver_t : public dbc_proc_callback_t
       // Mine spawns under the target.
       event_t* e = make_event<mine_explosion_event_t>( *listener -> sim,
         fire_mines,
-        state -> target,
-        state -> target -> x_position,
-        state -> target -> y_position,
+        t,
+        t -> x_position,
+        t -> y_position,
         &active_mines,
         timer );
       active_mines.push_back( e );
@@ -2201,7 +2199,7 @@ struct riftworld_codex_callback_t : public dbc_proc_callback_t
     dbc_proc_callback_t( effect.item, effect ), buffs( std::move(b) )
   {}
 
-  void execute( action_t* /* a */, action_state_t* /* call_data */ ) override
+  void execute( const spell_data_t*, player_t*, action_state_t* ) override
   {
     // Codex prefers to proc inactive buffs over active ones.
     // Make a vector with only the inactive buffs.
@@ -2380,7 +2378,7 @@ struct memento_callback_t : public dbc_proc_callback_t
     dbc_proc_callback_t( effect.item, effect ), buffs( std::move(b) )
   {}
 
-  void execute( action_t* /* a */, action_state_t* /* call_data */ ) override
+  void execute( const spell_data_t*, player_t*, action_state_t* ) override
   {
     // Memento prefers to proc inactive buffs over active ones.
     // Make a vector with only the inactive buffs.
@@ -2544,13 +2542,13 @@ void item::spiked_counterweight( special_effect_t& effect )
         accumulator = make_event<haymaker_event_t>( *effect.player->sim, this, action, debuff );
       }
 
-      void execute( action_t* /* a */, action_state_t* trigger_state ) override
+      void execute( const spell_data_t*, player_t* t, action_state_t* s ) override
       {
-        if ( trigger_state->result_amount <= 0 )
+        if ( s->result_amount <= 0 )
           return;
 
-        if ( on_use->get_debuff( trigger_state->target )->check() )
-          accumulator->damage += trigger_state->result_amount * multiplier;
+        if ( on_use->get_debuff( t )->check() )
+          accumulator->damage += s->result_amount * multiplier;
       }
 
       // Forward declaration does not work on MacOS Clang at least, so move definition after class
@@ -2713,7 +2711,7 @@ void item::spectral_thurible( special_effect_t& effect )
 
     }
 
-    void execute( action_t*, action_state_t* ) override
+    void execute( const spell_data_t*, player_t*, action_state_t* ) override
     {
       if ( icd -> up() )
       {
@@ -2960,12 +2958,12 @@ void item::nightblooming_frond( special_effect_t& effect )
 
     // Have to override default dbc_proc_callback_t behavior here, as it would expire the buff upon
     // reaching max stack.
-    void execute( action_t*, action_state_t* state ) override
+    void execute( const spell_data_t*, player_t* t, action_state_t* s ) override
     {
       proc_buff -> trigger();
       if ( proc_buff -> check() > 1 )
       {
-        proc_action -> target = target( state );
+        proc_action -> target = get_target( t, s );
         proc_action -> execute();
       }
     }
@@ -2981,7 +2979,7 @@ void item::nightblooming_frond( special_effect_t& effect )
     // temporarily make the driver change the refresh behavior to "refresh to full duration", so if
     // you get a lucky driver proc while recursive strikes is up, you get +1 stack, and a full 15
     // seconds of additional buff time.
-    void execute( action_t*, action_state_t* ) override
+    void execute( const spell_data_t*, player_t*, action_state_t* ) override
     {
       proc_buff -> refresh_behavior = buff_refresh_behavior::DURATION;
       proc_buff -> trigger();
@@ -3183,7 +3181,7 @@ struct dreadstone_proc_cb_t : public dbc_proc_callback_t
     dbc_proc_callback_t( effect.item, effect ), buffs( std::move( buffs_ ) )
   { }
 
-  void execute( action_t* /* a */, action_state_t* /* state */ ) override
+  void execute( const spell_data_t*, player_t*, action_state_t* ) override
   {
     rng().range( buffs )->trigger();
   }
@@ -3233,11 +3231,11 @@ void item::reality_breacher( special_effect_t& effect )
   auto delay = timespan_t::from_millis( effect.trigger()->effectN( 1 ).misc_value1() );
 
   effect.player->callbacks.register_callback_execute_function(
-    effect.spell_id, [ damage, delay ]( auto, auto, const action_state_t* s ) {
+    effect.spell_id, [ damage, delay ]( auto, auto, player_t* t, auto ) {
       make_event<ground_aoe_event_t>( *damage->player->sim, damage->player, ground_aoe_params_t()
-        .target( s->target )
-        .x( s->target->x_position )
-        .y( s->target->y_position )
+        .target( t )
+        .x( t->x_position )
+        .y( t->y_position )
         .pulse_time( delay )
         .action( damage )
         .n_pulses( 1 ) );
@@ -3356,9 +3354,9 @@ struct darkstrikes_driver_t : public dbc_proc_callback_t
     damage( effect.player -> find_action( "darkstrikes" ) )
   { }
 
-  void execute( action_t* /* a */, action_state_t* trigger_state ) override
+  void execute( const spell_data_t*, player_t* t, action_state_t* ) override
   {
-    damage -> target = trigger_state -> target;
+    damage -> target = t;
     damage -> schedule_execute();
   }
 };
@@ -3472,19 +3470,19 @@ struct poisoned_dreams_damage_driver_t : public dbc_proc_callback_t
 
   }
 
-  void trigger( action_t* a, action_state_t* s ) override
+  void trigger( const proc_data_t& data, player_t* t, action_state_t* s, proc_trigger_type_e type ) override
   {
-    if ( s -> target != target )
+    if ( t != target )
     {
       return;
     }
 
-    dbc_proc_callback_t::trigger( a, s );
+    dbc_proc_callback_t::trigger( data, t, s, type );
   }
 
-  void execute( action_t* /* a */ , action_state_t* trigger_state ) override
+  void execute( const spell_data_t*, player_t* t, action_state_t* ) override
   {
-    damage -> target = trigger_state -> target;
+    damage -> target = t;
     damage -> execute();
   }
 
@@ -3506,7 +3504,7 @@ struct poisoned_dreams_t : public buff_t
     effect = new special_effect_t( p.source );
     effect -> name_str = "poisoned_dreams_damage_driver";
     effect -> proc_chance_ = 1.0;
-    effect -> proc_flags_ = PF_MAGIC_SPELL | PF_NONE_SPELL | PF_PERIODIC;
+    effect -> proc_flags_ = PF_MAGIC_SPELL | PF_NONE_HARMFUL | PF_PERIODIC;
     effect -> proc_flags2_ = PF2_ALL_HIT | PF2_PERIODIC_DAMAGE;
     p.source -> special_effects.push_back( effect );
 
@@ -3555,15 +3553,15 @@ struct bough_of_corruption_driver_t : public dbc_proc_callback_t
     return new poisoned_dreams_t( { target, listener }, eff, eff->trigger(), damage );
   }
 
-  void execute( action_t*  /*a*/ , action_state_t* trigger_state ) override
+  void execute( const spell_data_t*, player_t* t, action_state_t* ) override
   {
-    get_debuff( trigger_state->target )->trigger();
+    get_debuff( t )->trigger();
   }
 };
 
 void item::bough_of_corruption( special_effect_t& effect )
 {
-  effect.proc_flags_ = effect.driver() -> proc_flags()  | PF_NONE_SPELL;
+  effect.proc_flags_ = effect.driver() -> proc_flags()  | PF_NONE_HARMFUL;
   effect.proc_flags2_ = PF2_ALL_HIT;
 
   new bough_of_corruption_driver_t( effect );
@@ -3788,7 +3786,7 @@ void item::entwined_elemental_foci( special_effect_t& effect )
       }
     }
 
-    void execute( action_t*, action_state_t* ) override
+    void execute( const spell_data_t*, player_t*, action_state_t* ) override
     {
       // Foci prefers to proc inactive buffs over active ones.
       // Make a vector with only the inactive buffs.
@@ -3864,7 +3862,7 @@ void item::tiny_oozeling_in_a_jar( special_effect_t& effect )
       dbc_proc_callback_t( effect -> item, *effect ), goo( cg )
     {}
 
-    void execute( action_t* /* action */, action_state_t* /* state */ ) override
+    void execute( const spell_data_t*, player_t*, action_state_t* ) override
     {
       goo -> trigger();
     }
@@ -3948,7 +3946,7 @@ void item::figurehead_of_the_naglfar( special_effect_t& effect )
         proc_spell_t::init();
 
         // Allow DA multipliers so base_multiplier may take effect.
-        snapshot_flags = STATE_MUL_DA;
+        snapshot_flags = STATE_MUL_SPELL_DA | STATE_MUL_PLAYER_DAM;
         update_flags = 0;
       }
 
@@ -4010,20 +4008,20 @@ void item::figurehead_of_the_naglfar( special_effect_t& effect )
         } );
     }
 
-    void execute( action_t* /* a */, action_state_t* trigger_state ) override
+    void execute( const spell_data_t*, player_t* t, action_state_t* s ) override
     {
       // If the debuff expires while a callback execute event it scheduled,
       // the active_target will be set to nullptr just before execute is called.
       // If that happens, just bail out.
       if ( !active_target )
         return;
-      if ( trigger_state->target == active_target )
+      if ( t == active_target )
         return;
-      if ( trigger_state->result_amount <= 0 )
+      if ( s->result_amount <= 0 )
         return;
 
       damage->target = active_target;
-      damage->base_dd_min = damage->base_dd_max = trigger_state->result_amount;
+      damage->base_dd_min = damage->base_dd_max = s->result_amount;
       damage->execute();
     }
   };
@@ -4199,7 +4197,7 @@ struct aw_nuts_t : public proc_spell_t
     proc_spell_t::init();
 
     // Don't benefit from player multipliers because, in game, the squirrel is dealing the damage, not you.
-    snapshot_flags &= ~( STATE_MUL_DA | STATE_MUL_PERSISTENT | STATE_TGT_MUL_DA );
+    snapshot_flags &= ~( STATE_MUL_SPELL_DA | STATE_MUL_PLAYER_DAM | STATE_MUL_PERSISTENT | STATE_TGT_MUL_DA );
   }
 };
 
@@ -4262,7 +4260,7 @@ struct natures_call_callback_t : public dbc_proc_callback_t
     dbc_proc_callback_t( effect.item, effect ), procs( std::move(p) )
   {}
 
-  void execute( action_t* /* a */, action_state_t* call_data ) override
+  void execute( const spell_data_t*, player_t* t, action_state_t* ) override
   {
     // Nature's Call prefers to proc inactive buffs over active ones.
     // Make a vector with only the inactive buffs.
@@ -4278,7 +4276,7 @@ struct natures_call_callback_t : public dbc_proc_callback_t
 
     // Roll it!
     int roll = ( int ) ( listener -> sim -> rng().real() * inactive_procs.size() );
-    inactive_procs[ roll ] -> execute( call_data -> target );
+    inactive_procs[ roll ] -> execute( t );
   }
 };
 
@@ -4318,9 +4316,9 @@ void item::moonlit_prism( special_effect_t& effect )
   effect2->source           = SPECIAL_EFFECT_SOURCE_ITEM;
   effect2->name_str         = "moonlit_prism_driver";
   effect2->proc_chance_     = 1.0;
-  effect2->spell_id         = effect.driver()->id();
+  effect2->spell_id         = effect.spell_id;
   effect2->cooldown_        = effect.driver()->internal_cooldown();
-  effect2->proc_flags_      = PF_RANGED | PF_RANGED_ABILITY | PF_MAGIC_SPELL | PF_NONE_SPELL;
+  effect2->proc_flags_      = PF_RANGED | PF_RANGED_ABILITY | PF_MAGIC_SPELL | PF_NONE_HARMFUL;
   effect2->proc_flags2_     = PF2_HIT | PF2_CRIT;
   effect.player->special_effects.push_back( effect2 );
 
@@ -4487,11 +4485,11 @@ struct shadow_wave_callback_t : public dbc_proc_callback_t
     shadow_wave( effect.player -> find_action( "shadow_wave" ) )
   {}
 
-  void execute( action_t* /* a */, action_state_t* s ) override
+  void execute( const spell_data_t*, player_t* t, action_state_t* ) override
   {
     // 2 second return time, from in-game combat logs.
     make_event<ground_aoe_event_t>( *effect.player -> sim, effect.player, ground_aoe_params_t()
-      .target( s -> target )
+      .target( t )
       .x( effect.player -> x_position )
       .y( effect.player -> y_position )
       .duration( timespan_t::from_seconds( 2.0 ) )
@@ -4590,9 +4588,9 @@ void item::portable_manacracker( special_effect_t& effect )
         } );
     }
 
-    void execute( action_t*, action_state_t* s ) override
+    void execute( const spell_data_t*, player_t* t, action_state_t* ) override
     {
-      get_debuff( s->target )->trigger();
+      get_debuff( t )->trigger();
     }
   };
 
@@ -4678,10 +4676,9 @@ struct spontaneous_appendages_t: public proc_spell_t
     proc_spell_t( "horrific_slam", effect.player,
       effect.player -> find_spell( effect.trigger() -> effectN( 1 ).trigger() -> id() ),
       effect.item )
-  {}
-
-  double composite_target_armor( player_t* ) const override
-  { return 0.0; }
+  {
+    ignores_armor = true;
+  }
 };
 
 void item::spontaneous_appendages( special_effect_t& effect )
@@ -4714,7 +4711,8 @@ void item::wriggling_sinew( special_effect_t& effect )
   effect.trigger_spell_id = 222050;
   auto damage = effect.initialize_offensive_spell_action();
   damage->base_dd_min = damage->base_dd_max = effect.driver()->effectN( 1 ).average( effect.item );
-  damage->snapshot_flags |= STATE_MUL_DA | STATE_VERSATILITY | STATE_MUL_PERSISTENT | STATE_TGT_MUL_DA;
+  damage->snapshot_flags |=
+    STATE_MUL_SPELL_DA | STATE_MUL_PLAYER_DAM | STATE_VERSATILITY | STATE_MUL_PERSISTENT | STATE_TGT_MUL_DA;
   // Reset triggered spell; we don't want to trigger a spell on use.
   effect.trigger_spell_id = 0;
 
@@ -4779,14 +4777,14 @@ void item::wriggling_sinew( special_effect_t& effect )
           } );
     }
 
-    void execute( action_t*, action_state_t* s ) override
+    void execute( const spell_data_t*, player_t* t, action_state_t* s ) override
     {
-      if ( s->target == s->action->player )
+      if ( t == s->action->player )
         return;
       if ( s->result_amount <= 0 )
         return;
 
-      get_debuff( s->target )->trigger();
+      get_debuff( t )->trigger();
       buff->decrement();
     }
   };
@@ -4795,7 +4793,7 @@ void item::wriggling_sinew( special_effect_t& effect )
   effect2->source = SPECIAL_EFFECT_SOURCE_ITEM;
   effect2->name_str = "maddening_whispers_driver";
   effect2->proc_chance_ = 1.0;
-  effect2->proc_flags_ = PF_MAGIC_SPELL | PF_NONE_SPELL;
+  effect2->proc_flags_ = PF_MAGIC_SPELL | PF_NONE_HARMFUL;
   effect2->proc_flags2_ = PF2_ALL_HIT;
   effect.player->special_effects.push_back( effect2 );
 
@@ -4874,7 +4872,7 @@ struct convergence_of_fates_callback_t : public dbc_proc_callback_t
     } while ( cd -> spec != SPEC_NONE );
   }
 
-  void execute( action_t*, action_state_t* ) override
+  void execute( const spell_data_t*, player_t*, action_state_t* ) override
   {
     assert( !cooldowns.empty() );
 
@@ -5102,17 +5100,14 @@ struct legion_potion_damage_t : public T
   legion_potion_damage_t( const special_effect_t& effect, ::util::string_view name_str, const spell_data_t* spell ) :
     T( name_str, effect.player, spell )
   {
-    this -> background = this -> may_crit = this -> special = true;
-    this -> callbacks = false;
-    this -> base_dd_min = spell -> effectN( 1 ).min( this -> player );
-    this -> base_dd_max = spell -> effectN( 1 ).max( this -> player );
+    this->background = this->may_crit = this->special = this->ignores_armor = true;
+    this->callbacks = false;
+    this->base_dd_min = spell->effectN( 1 ).min( this->player );
+    this->base_dd_max = spell->effectN( 1 ).max( this->player );
     // Currently 0, but future proof if they decide to make it scale ..
-    this -> attack_power_mod.direct = spell -> effectN( 1 ).ap_coeff();
-    this -> spell_power_mod.direct = spell -> effectN( 1 ).sp_coeff();
+    this->attack_power_mod.direct = spell->effectN( 1 ).ap_coeff();
+    this->spell_power_mod.direct = spell->effectN( 1 ).sp_coeff();
   }
-
-  double composite_target_armor( player_t* ) const override
-  { return 0.0; }
 };
 
 // Potion of the Old War ====================================================
@@ -5481,7 +5476,7 @@ struct spawn_of_serpentrix_cb_t : public dbc_proc_callback_t
     }
   }
 
-  void execute( action_t* /* a */, action_state_t* /* state */ ) override
+  void execute( const spell_data_t*, player_t*, action_state_t* ) override
   {
     bool spawned = false;
 
@@ -5518,9 +5513,9 @@ struct wind_bolt_callback_t : public dbc_proc_callback_t
     dbc_proc_callback_t( i, effect ), wind_bolt( a )
   {}
 
-  void execute( action_t*, action_state_t* s ) override
+  void execute( const spell_data_t*, player_t* t, action_state_t* ) override
   {
-    wind_bolt -> target = s -> target;
+    wind_bolt -> target = t;
     effect.custom_buff -> trigger();
   }
 };

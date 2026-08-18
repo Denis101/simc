@@ -20,7 +20,9 @@ warlock_pet_t::warlock_pet_t( warlock_t* owner, util::string_view pet_name, pet_
   owner_coeff.health = 0.5;
 
   affected_by.demonic_brutality = owner->talents.demonic_brutality.ok();
-  triggers.hellbent_commander = owner->talents.hellbent_commander.ok();
+  triggers.hellbent_commander_heartbeat = owner->talents.hellbent_commander.ok();
+  triggers.hellbent_commander_arise = owner->talents.hellbent_commander.ok();
+  triggers.hellbent_commander_demise = owner->talents.hellbent_commander.ok();
 
   register_on_arise_callback( this, [ owner ]() { owner->n_active_pets++; } );
   register_on_demise_callback( this, [ owner ]( const player_t* ) { owner->n_active_pets--; } );
@@ -37,13 +39,16 @@ void warlock_pet_t::create_buffs()
   pet_t::create_buffs();
 
   // Demonology
-  buffs.imp_gang_boss = make_buff( this, "imp_gang_boss", o()->talents.imp_gang_boss_buff )
+  buffs.imp_gang_boss = make_buff( actor_pair_t( this, o() ), "imp_gang_boss", o()->talents.imp_gang_boss_buff )
                             ->set_default_value_from_effect( 2 );
 
-  buffs.unstable_soul = make_buff( this, "unstable_soul", o()->talents.unstable_soul_buff )
+  buffs.infernal_command = make_buff( actor_pair_t( this, o() ), "infernal_command", o()->warlock_base.infernal_command_buff )
+                               ->set_default_value( o()->warlock_base.infernal_command_buff->effectN( 1 ).percent() );
+
+  buffs.unstable_soul = make_buff( actor_pair_t( this, o() ), "unstable_soul", o()->talents.unstable_soul_buff )
                             ->set_default_value_from_effect( 1 );
 
-  buffs.ferocity_of_fharg = make_buff( this, "ferocity_of_fharg", o()->talents.ferocity_of_fharg_buff );
+  buffs.flametouched = make_buff( this, "ferocity_of_fharg", o()->talents.flametouched_buff );
 
   buffs.demonic_power = make_buff( this, "demonic_power", o()->talents.demonic_power_buff )
                             ->set_default_value_from_effect( 1 );
@@ -70,12 +75,14 @@ void warlock_pet_t::create_buffs()
                                 o()->buffs.pet_movement->trigger();
                               else if ( cur < prev )
                                 o()->buffs.pet_movement->decrement();
-                            } );
+                            } )
+                          ->set_proc_callbacks( false );
 
   // These buffs are needed for operational purposes but serve little to no reporting purpose
   buffs.imp_gang_boss->quiet = true;
+  buffs.infernal_command->quiet = true;
   buffs.unstable_soul->quiet = true;
-  buffs.ferocity_of_fharg->quiet = true;
+  buffs.flametouched->quiet = true;
   buffs.grimoire_of_service->quiet = true;
   buffs.embers->quiet = true;
 }
@@ -141,8 +148,8 @@ double warlock_pet_t::composite_melee_haste() const
 {
   double m = pet_t::composite_melee_haste();
 
-  if ( buffs.ferocity_of_fharg->check() )
-    m *= 1.0 + buffs.ferocity_of_fharg->data().effectN( 1 ).percent();
+  if ( buffs.flametouched->check() )
+    m *= 1.0 + buffs.flametouched->data().effectN( 1 ).percent();
 
   return m;
 }
@@ -151,8 +158,8 @@ double warlock_pet_t::composite_melee_auto_attack_speed() const
 {
   double m = pet_t::composite_melee_auto_attack_speed();
 
-  if ( buffs.ferocity_of_fharg->check() )
-    m /= 1.0 + buffs.ferocity_of_fharg->data().effectN( 1 ).percent();
+  if ( buffs.flametouched->check() )
+    m /= 1.0 + buffs.flametouched->data().effectN( 1 ).percent();
 
   return m;
 }
@@ -201,10 +208,10 @@ void warlock_pet_t::arise()
 
   pet_t::arise();
 
-  if ( triggers.hellbent_commander )
+  if ( triggers.hellbent_commander_arise )
   {
     o()->buffs.hellbent_commander->trigger();
-    assert( ( bugs || o()->buffs.hellbent_commander->check() == o()->active_demon_count( !bugs ) ) && "Incorrent Demon Count for Hellbent Commander" );
+    assert( ( bugs || o()->buffs.hellbent_commander->check() == o()->active_demon_count() ) && "Incorrect Demon Count for Hellbent Commander" );
   }
 }
 
@@ -212,7 +219,7 @@ void warlock_pet_t::demise()
 {
   if ( !current.sleeping )
   {
-    if ( triggers.hellbent_commander )
+    if ( triggers.hellbent_commander_demise )
     {
       o()->buffs.hellbent_commander->decrement();
     }
@@ -223,7 +230,7 @@ void warlock_pet_t::demise()
   if ( melee_attack )
     melee_attack->reset();
 
-  assert( ( bugs || !o()->talents.hellbent_commander.ok() || o()->buffs.hellbent_commander->check() == o()->active_demon_count( !bugs ) ) && "Incorrent Demon Count for Hellbent Commander" );
+  assert( ( bugs || !o()->talents.hellbent_commander.ok() || o()->buffs.hellbent_commander->check() == o()->active_demon_count() ) && "Incorrect Demon Count for Hellbent Commander" );
 }
 
  // TODO: Add all pet spells to base warlock data
@@ -255,6 +262,44 @@ timespan_t warlock_simple_pet_t::available() const
   return cd_remains;
 }
 
+warlock_pet_spell_t::warlock_pet_spell_t( util::string_view token, warlock_pet_t* p, const spell_data_t* s )
+  : base_t( token, p, s ),
+    affected_by()
+{
+  affected_by.xalans_cruelty_effect_6 = p->o()->hero.xalans_cruelty.ok() && data().affected_by_label( p->o()->hero.xalans_cruelty->effectN( 6 ) );
+  affected_by.xalans_cruelty_effect_9 = p->o()->hero.xalans_cruelty.ok() && data().affected_by_label( p->o()->hero.xalans_cruelty->effectN( 9 ) );
+
+  affected_by.xalans_ferocity_effect_6 = p->o()->hero.xalans_ferocity.ok() && data().affected_by_label( p->o()->hero.xalans_ferocity->effectN( 6 ) );
+  affected_by.xalans_ferocity_effect_7 = p->o()->hero.xalans_ferocity.ok() && data().affected_by_label( p->o()->hero.xalans_ferocity->effectN( 7 ) );
+}
+
+warlock_pet_spell_t::warlock_pet_spell_t( warlock_pet_t* p, util::string_view n )
+  : warlock_pet_spell_t( n, p, p->find_pet_spell( n ) )
+{ }
+
+double warlock_pet_spell_t::composite_crit_chance_multiplier() const
+{
+  double m = base_t::composite_crit_chance_multiplier();
+
+  // Xalan's Cruelty effect #6 (id=1190450) is 'Apply Aura Pet (174)' and requires manual handling
+  if ( affected_by.xalans_cruelty_effect_6 )
+    m *= 1.0 + p()->o()->hero.xalans_cruelty->effectN( 6 ).percent();
+
+  // Xalan's Cruelty effect #9 (id=1322330) is 'Apply Aura Pet (174)' and requires manual handling
+  if ( affected_by.xalans_cruelty_effect_9 )
+    m *= 1.0 + p()->o()->hero.xalans_cruelty->effectN( 9 ).percent();
+
+  // Xalan's Ferocity effect #6 (id=1166684) is 'Apply Aura Pet (174)' and requires manual handling
+  if ( affected_by.xalans_ferocity_effect_6 )
+    m *= 1.0 + p()->o()->hero.xalans_ferocity->effectN( 6 ).percent();
+
+  // Xalan's Ferocity effect #7 (id=1190448) is 'Apply Aura Pet (174)' and requires manual handling
+  if ( affected_by.xalans_ferocity_effect_7 )
+    m *= 1.0 + p()->o()->hero.xalans_ferocity->effectN( 7 ).percent();
+
+  return m;
+}
+
 namespace base
 {
 
@@ -264,6 +309,10 @@ felhunter_pet_t::felhunter_pet_t( warlock_t* owner, util::string_view name )
   : warlock_pet_t( owner, name, PET_FELHUNTER, false )
 {
   npc_id = owner->find_spell( 691 )->effectN( 1 ).misc_value1();
+
+  // NOTE: 2026-07-11 Main pets do not trigger Hellbent Commander on arise/demise (must wait to player heartbeat) (bug?)
+  triggers.hellbent_commander_arise &= !bugs;
+  triggers.hellbent_commander_demise &= !bugs;
 
   action_list_str = "travel/shadow_bite";
 
@@ -312,6 +361,10 @@ imp_pet_t::imp_pet_t( warlock_t* owner, util::string_view name )
 {
   npc_id = owner->find_spell( 688 )->effectN( 1 ).misc_value1();
 
+  // NOTE: 2026-07-11 Main pets do not trigger Hellbent Commander on arise/demise (must wait to player heartbeat) (bug?)
+  triggers.hellbent_commander_arise &= !bugs;
+  triggers.hellbent_commander_demise &= !bugs;
+
   action_list_str = "firebolt";
 
   owner_coeff.ap_from_sp = 0.625;
@@ -353,6 +406,10 @@ sayaad_pet_t::sayaad_pet_t( warlock_t* owner, util::string_view name )
   : warlock_pet_t( owner, name, PET_SAYAAD, false )
 {
   npc_id = owner->find_spell( 366222 )->effectN( 1 ).misc_value1();
+
+  // NOTE: 2026-07-11 Main pets do not trigger Hellbent Commander on arise/demise (must wait to player heartbeat) (bug?)
+  triggers.hellbent_commander_arise &= !bugs;
+  triggers.hellbent_commander_demise &= !bugs;
 
   action_list_str = "travel/whiplash/lash_of_pain";
 
@@ -412,6 +469,10 @@ voidwalker_pet_t::voidwalker_pet_t( warlock_t* owner, util::string_view name )
 {
   npc_id = owner->find_spell( 697 )->effectN( 1 ).misc_value1();
 
+  // NOTE: 2026-07-11 Main pets do not trigger Hellbent Commander on arise/demise (must wait to player heartbeat) (bug?)
+  triggers.hellbent_commander_arise &= !bugs;
+  triggers.hellbent_commander_demise &= !bugs;
+
   action_list_str = "travel/consuming_shadows";
 
   is_main_pet = true;
@@ -461,6 +522,10 @@ felguard_pet_t::felguard_pet_t( warlock_t* owner, util::string_view name )
     max_energy_threshold( 100 )
 {
   npc_id = owner->talents.summon_felguard->effectN( 1 ).misc_value1();
+
+  // NOTE: 2026-07-11 Main pets do not trigger Hellbent Commander on arise/demise (must wait to player heartbeat) (bug?)
+  triggers.hellbent_commander_arise &= !bugs;
+  triggers.hellbent_commander_demise &= !bugs;
 
   action_list_str = "travel";
 
@@ -528,7 +593,6 @@ struct felstorm_t : public warlock_pet_melee_attack_t
     may_crit = false;
     channeled = true;
 
-    dynamic_tick_action = true;
     tick_action = new felstorm_tick_t( p, p->find_spell( 89753 ) );
   }
 
@@ -537,7 +601,7 @@ struct felstorm_t : public warlock_pet_melee_attack_t
   { return action_t::composite_haste() * player->cache.spell_cast_speed(); }
 
   timespan_t composite_dot_duration( const action_state_t* s ) const override
-  { return s->action->tick_time( s ) * 5.0; }
+  { return s->action->tick_time( s ) * data().duration().total_seconds(); }
 
   void execute() override
   {
@@ -596,7 +660,7 @@ void felguard_pet_t::init_base_stats()
   melee_attack = new felguard_melee_t( this, 1.0, "melee" );
 
   // 2026-02-17: Validated coefficients
-  owner_coeff.ap_from_sp = 1.521;
+  owner_coeff.ap_from_sp = 1.5201;
   owner_coeff.sp_from_sp = 1.4519; // not validated
   owner_coeff.health = 0.75;
 
@@ -622,21 +686,29 @@ action_t* felguard_pet_t::create_action( util::string_view name, util::string_vi
 /// Wild Imp Begin
 
 wild_imp_pet_t::wild_imp_pet_t( warlock_t* owner )
-  : warlock_pet_t( owner, "wild_imp", PET_WILD_IMP, true ), firebolt( nullptr ), is_hog_imp( true ), power_siphon( false ), imploded( false )
+  : warlock_pet_t( owner, "wild_imp", PET_WILD_IMP, true ), firebolt( nullptr ), is_hog_imp( true ), power_siphon( false ), imploded( false ), isolated_imploded( false )
 {
   npc_id = owner->warlock_base.wild_imp->effectN( 1 ).misc_value1();
 
-  // Manually handle the Wild Imps contribution to Hellbent Commander to replicate its bugged behavior
-  triggers.hellbent_commander &= !bugs;
+  // NOTE: 2026-07-11 Wild Imps do not trigger Hellbent Commander on arise (must wait to player heartbeat) (bug?)
+  triggers.hellbent_commander_arise &= !bugs;
+  // Manually handle the Wild Imps contribution to Hellbent Commander on demise to replicate its bugged behavior
+  triggers.hellbent_commander_demise &= !bugs;
 
   resource_regeneration = regen_type::DISABLED;
   owner_coeff.health = 0.15;
+
+  // Each Wild Imp uses its own independent accumulator PRD, reset to 0 on arise
+  if ( owner->talents.infernal_rapidity.ok() )
+    prd_rng_infernal_rapidity = get_accumulated_rng( "infernal_rapidity_i" + std::to_string( actor_index ), owner->prd_rng.infernal_rapidity_prd_c_value );
 }
 
 struct fel_firebolt_t : public warlock_pet_spell_t
 {
   fel_firebolt_t* twin = nullptr;
   const bool is_twin;
+  mutable bool target_cache_unstable_soul_state = false;
+  bool triggers_isolated_implosion = false;
 
   fel_firebolt_t( warlock_pet_t* p, bool _is_twin = false )
     : warlock_pet_spell_t( "fel_firebolt", p, p->find_spell( 104318 ) ),
@@ -686,24 +758,98 @@ struct fel_firebolt_t : public warlock_pet_spell_t
     }
   }
 
+  size_t available_targets( std::vector<player_t*>& tl ) const override
+  {
+    warlock_pet_spell_t::available_targets( tl );
+
+    // If there is more than one target, Unstable Soul always fires all extra hits,
+    // even if some targets are hit multiple times
+    if ( p()->buffs.unstable_soul->check() )
+    {
+      const int n_tar = n_targets();
+      const size_t og_tar_count = tl.size();
+
+      if ( n_tar > 1 && og_tar_count > 1 && og_tar_count < as<size_t>( n_tar ) )
+      {
+        size_t remaining_tar = as<size_t>( n_tar ) - og_tar_count;
+
+        tl.reserve( as<size_t>( n_tar ) );
+        while ( remaining_tar >= og_tar_count )
+        {
+          for ( size_t i = 0; i < og_tar_count; ++i )
+            tl.push_back( tl[ i ] );
+
+          remaining_tar -= og_tar_count;
+        }
+
+        if ( remaining_tar > 0 )
+        {
+          std::vector<player_t*> shuff_tar( tl.begin(), tl.begin() + og_tar_count );
+          rng().shuffle( shuff_tar.begin(), shuff_tar.end() );
+
+          for ( size_t i = 0; i < remaining_tar; ++i )
+            tl.push_back( shuff_tar[ i ] );
+        }
+      }
+    }
+
+    return tl.size();
+  }
+
+  std::vector<player_t*>& target_list() const override
+  {
+    // Invalidate the target cache whenever the current Unstable Soul buff state differs from the cached one,
+    // since available_targets() builds a different target list depending on whether the buff is active or not.
+    const bool unstable_soul_buff = p()->buffs.unstable_soul->check();
+    if ( target_cache_unstable_soul_state != unstable_soul_buff )
+    {
+      target_cache.is_valid = false;
+      target_cache_unstable_soul_state = unstable_soul_buff;
+    }
+
+    return warlock_pet_spell_t::target_list();
+  }
+
   void execute() override
   {
+    player_t* ffb_target = target;
+
+    triggers_isolated_implosion = false;
+
     warlock_pet_spell_t::execute();
 
-    if ( ( twin != nullptr ) && p()->o()->flat_rng.infernal_rapidity->trigger() )
+    // NOTE: 2026-07-18 Infernal Rapidity cannot proc from the last Fel Firebolt cast of a Wild Imp if that Wild Imp also triggers Isolated Implosion (bug)
+    if ( !p()->bugs || !triggers_isolated_implosion )
     {
-      p()->o()->procs.infernal_rapidity->occur();
-      twin->execute_on_target( target );
+      // Extra Fel Firebolts from Infernal Rapidity cannot proc Infernal Rapidity again
+      if ( ( twin != nullptr ) && ( p()->bugs ? debug_cast<wild_imp_pet_t*>( p() )->prd_rng_infernal_rapidity->trigger() : rng().roll( p()->o()->talents.infernal_rapidity->effectN( 1 ).percent() ) ) )
+      {
+        p()->o()->procs.infernal_rapidity->occur();
+        twin->execute_on_target( ffb_target );
+      }
     }
   }
 
   void consume_resource() override
   {
+    player_t* ffb_target = target;
+
     warlock_pet_spell_t::consume_resource();
 
     // Imp dies if it cannot cast
     if ( player->resources.current[ RESOURCE_ENERGY ] < cost() )
-      make_event( sim, 0_ms, [ this ]() { player->cast_pet()->dismiss(); } );
+    {
+      auto imp = debug_cast<warlock::pets::demonology::wild_imp_pet_t*>( player );
+      if ( p()->o()->active_4pc<MID2>() && imp->o()->prd_rng.isolated_implosion->trigger() )
+        triggers_isolated_implosion = true;
+
+      make_event( sim, 0_ms, [ imp = imp, imp_target = ffb_target, isolated_implosion_proc = triggers_isolated_implosion ] {
+        if ( isolated_implosion_proc )
+          helpers::trigger_isolated_implosion( imp->o(), imp, imp_target );
+        else
+          imp->cast_pet()->dismiss();
+      } );
+    }
   }
 };
 
@@ -759,6 +905,12 @@ void wild_imp_pet_t::arise()
   is_hog_imp = ( duration == o()->warlock_base.wild_imp->duration() ); // TODO: Only valid because duration diff, look for a safer way
   power_siphon = false;
   imploded = false;
+  isolated_imploded = false;
+
+  // Each Wild Imp uses its own independent accumulator PRD, reset to 0 on arise
+  if ( o()->talents.infernal_rapidity.ok() )
+    prd_rng_infernal_rapidity->reset( reset_type_e::COMBAT );
+
   o()->buffs.wild_imps->trigger();
 
   if ( o()->talents.summon_demonic_tyrant.ok() )
@@ -770,9 +922,9 @@ void wild_imp_pet_t::arise()
     }
   }
 
-  // Manual handling of Hellbent Commander buff for Wild Imps
-  if ( bugs && o()->talents.hellbent_commander.ok() )
-    o()->buffs.hellbent_commander->trigger();
+  // Set initial timers for Infernal Command buff sequence of events
+  infernal_command_ev_ts = sim->current_time() + 5045_ms;
+  infernal_command_ev_offset = o()->wild_imp_ic_shared_offset;
 
   // Start casting fel firebolts
   firebolt->set_target( o()->target );
@@ -789,43 +941,44 @@ void wild_imp_pet_t::demise()
 
     buffs.unstable_soul->expire();
 
+    buffs.infernal_command->expire();
+
     if ( o()->talents.summon_demonic_tyrant.ok() )
     {
       for ( auto t : o()->warlock_pet_list.demonic_tyrants )
       {
-        if ( t->is_active() )
+        // NOTE: 2026-07-11: Imploded Wild Imps do not subtract stacks from Demonic Power buff (bug?)
+        if ( t->is_active() && ( !bugs || !imploded ) )
           t->buffs.demonic_power->decrement();
       }
     }
 
-    if ( !power_siphon )
+    if ( o()->talents.demoniac.ok() )
     {
-      // NOTE: 2026-03-06 It has been tested that Demoniac (Wild Imps) follows a Flat % chance model for each imp
-      double core_chance = o()->talents.demonic_core_spell->effectN( 1 ).percent();
-
-      if ( imploded )
+      if ( !power_siphon )
       {
-        core_chance += o()->hero.sataiels_volition->effectN( 3 ).percent();
+        // NOTE: 2026-07-11: Isolated Imploded imps cannot trigger Demoniac (bug)
+        if ( imploded )
+        {
+          if ( o()->flat_rng.demoniac_imp_implosion->trigger() )
+          {
+            o()->buffs.demonic_core->trigger();
+            o()->procs.demonic_core_imps_implosion->occur();
+          }
+        }
+        else if ( !bugs || !isolated_imploded )
+        {
+          if ( o()->prd_rng.demoniac_imp_fade->trigger() )
+          {
+            o()->buffs.demonic_core->trigger();
+            o()->procs.demonic_core_imps_fade->occur();
+          }
+        }
       }
-      else
-      {
-        // NOTE: 2026-03-06 If a Wild Imp demise normally (by not being imploded), its actual Demoniac chance to generate a
-        // demonic core is about 5x lower than indicated in the spell data (in our tests it is about ~2% instead of 10%).
-        if ( o()->bugs )
-          core_chance *= 0.2;
-      }
-
-      if ( !o()->talents.demoniac.ok() )
-        core_chance = 0.0;
-
-      bool success = o()->buffs.demonic_core->trigger( 1, buff_t::DEFAULT_VALUE(), core_chance );
-
-      if ( success )
-        o()->procs.demonic_core_imps->occur();
     }
 
     // Manual handling of Hellbent Commander buff for Wild Imps
-    // NOTE (2026-03-08): Wild Imps are currently bugged when updating Hellbent Commander stacks on demise:
+    // NOTE (2026-07-11): Wild Imps are currently bugged when updating Hellbent Commander stacks on demise:
     // If imploded, imps summoned via HoG decrease one stack each, while those summoned via Inner Demons,
     // Spiteful Reconstitution, or To Hell and Back do not decrease any stacks.
     // If the imps demise normally or are sacrificed with Power Siphon, HoG imps decrease two stacks each,
@@ -871,10 +1024,13 @@ double wild_imp_pet_t::composite_player_multiplier( school_e school ) const
 
 dreadstalker_t::dreadstalker_t( warlock_t* owner ) : warlock_pet_t( owner, "dreadstalker", PET_DREADSTALKER, true )
 {
-  npc_id = owner->talents.call_dreadstalkers_2->effectN( 1 ).misc_value1();
+  npc_id = owner->talents.call_dreadstalkers_summon_1->effectN( 1 ).misc_value1();
 
   action_list_str = "leap/travel/dreadbite";
   resource_regeneration  = regen_type::DISABLED;
+
+  // NOTE: 2026-07-11 Dreadstalkers do not trigger Hellbent Commander on arise (must wait to player heartbeat) (bug?)
+  triggers.hellbent_commander_arise &= !bugs;
 
   // 2026-02-17: Validated coefficient
   owner_coeff.ap_from_sp = 0.825;
@@ -888,10 +1044,13 @@ dreadstalker_t::dreadstalker_t( warlock_t* owner ) : warlock_pet_t( owner, "drea
 dreadstalker_t::dreadstalker_t( warlock_t* owner, util::string_view pet_name, pet_e pet_type )
   : warlock_pet_t( owner, pet_name, pet_type, true )
 {
-  npc_id = owner->talents.call_dreadstalkers_2->effectN( 1 ).misc_value1();
+  npc_id = owner->talents.call_dreadstalkers_summon_1->effectN( 1 ).misc_value1();
 
   action_list_str = "leap/travel/dreadbite";
   resource_regeneration  = regen_type::DISABLED;
+
+  // NOTE: 2026-07-11 Dreadstalkers do not trigger Hellbent Commander on arise (must wait to player heartbeat) (bug?)
+  triggers.hellbent_commander_arise &= !bugs;
 
   // 2026-02-17: Validated coefficient
   owner_coeff.ap_from_sp = 0.825;
@@ -1057,7 +1216,7 @@ void dreadstalker_t::arise()
   }
 
   if ( o()->talents.flametouched.ok() )
-    buffs.ferocity_of_fharg->trigger();
+    buffs.flametouched->trigger();
 
   dreadbite_executes = 1;
 
@@ -1104,8 +1263,8 @@ double dreadstalker_t::composite_melee_crit_chance() const
 {
   double m = warlock_pet_t::composite_melee_crit_chance();
 
-  if ( buffs.ferocity_of_fharg->check() )
-    m += buffs.ferocity_of_fharg->data().effectN( 2 ).percent();
+  if ( buffs.flametouched->check() )
+    m += buffs.flametouched->data().effectN( 2 ).percent();
 
   return m;
 }
@@ -1114,8 +1273,8 @@ double dreadstalker_t::composite_spell_crit_chance() const
 {
   double m = warlock_pet_t::composite_spell_crit_chance();
 
-  if ( buffs.ferocity_of_fharg->check() )
-    m += buffs.ferocity_of_fharg->data().effectN( 2 ).percent();
+  if ( buffs.flametouched->check() )
+    m += buffs.flametouched->data().effectN( 2 ).percent();
 
   return m;
 }
@@ -1147,27 +1306,35 @@ vilefiend_t::vilefiend_t( warlock_t* owner )
   {
     npc_id = owner->talents.gloomhound->effectN( 1 ).misc_value1();
     npc_suffix = "vilefiend";
+    // 2026-08-01: Validated coefficients
+    // Gloomhound does 35% more damage than the other variants
+    owner_coeff.ap_from_sp = 0.6075;
+    owner_coeff.sp_from_sp = 2.6325;
   }
   else if ( owner->talents.mark_of_fharg.ok() )
   {
     npc_id = owner->talents.charhound->effectN( 1 ).misc_value1();
     npc_suffix = "vilefiend";
+    // 2026-08-01: Validated coefficients
+    owner_coeff.ap_from_sp = 0.45;
+    owner_coeff.sp_from_sp = 1.95;
   }
   else
   {
     npc_id = owner->talents.vilefiend->effectN( 1 ).misc_value1();
+    // NOTE: 2026-07-11 Regular Vilefiend do not trigger Hellbent Commander on heartbeat (bug?)
+    triggers.hellbent_commander_heartbeat &= !bugs;
+    // 2026-08-01: Validated coefficients
+    owner_coeff.ap_from_sp = 0.45;
+    owner_coeff.sp_from_sp = 1.95;
   }
+
+  // NOTE: 2026-07-11 Vilefiend do not trigger Hellbent Commander on demise (must wait to player heartbeat) (bug?)
+  triggers.hellbent_commander_demise &= !bugs;
 
   action_list_str = "bile_spit";
   action_list_str += "/travel";
   action_list_str += "/headbutt";
-
-  // Currently bugged and not being affected by the crit bonus
-  affected_by.demonic_brutality = false;
-
-  // 2026-02-17: Validated coefficients
-  owner_coeff.ap_from_sp = 0.45;
-  owner_coeff.sp_from_sp = 1.95;
 
   owner_coeff.health = 0.75;
 
@@ -1193,10 +1360,12 @@ struct vilefiend_melee_t : public warlock_pet_melee_t
 
   void execute() override
   {
+    player_t* vfm_target = target;
+
     warlock_pet_melee_t::execute();
 
     if ( debug_cast<vilefiend_t*>( p() )->mark_of_shatug->check() )
-      gloom->execute_on_target( target );
+      gloom->execute_on_target( vfm_target );
   }
 };
 
@@ -1241,10 +1410,12 @@ struct headbutt_t : public warlock_pet_melee_attack_t
 
   void execute() override
   {
+    player_t* hbtt_target = target;
+
     warlock_pet_melee_attack_t::execute();
 
     if ( debug_cast<vilefiend_t*>( p() )->mark_of_shatug->check() )
-      gloom->execute_on_target( target );
+      gloom->execute_on_target( hbtt_target );
   }
 };
 
@@ -1271,9 +1442,11 @@ void vilefiend_t::create_buffs()
 {
   warlock_simple_pet_t::create_buffs();
 
-  mark_of_shatug = make_buff<buff_t>( this, "mark_of_shatug" );
+  mark_of_shatug = make_buff<buff_t>( this, "mark_of_shatug", o()->talents.mark_of_shatug )
+                       ->set_proc_callbacks( false );
 
-  mark_of_fharg = make_buff<buff_t>( this, "mark_of_fharg" );
+  mark_of_fharg = make_buff<buff_t>( this, "mark_of_fharg", o()->talents.mark_of_fharg )
+                      ->set_proc_callbacks( false );
 
   auto damage = new infernal_presence_t( this );
 
@@ -1331,6 +1504,10 @@ demonic_tyrant_t::demonic_tyrant_t( warlock_t* owner, util::string_view name )
 {
   npc_id = owner->talents.summon_demonic_tyrant->effectN( owner->talents.antoran_armaments.ok() ? 4 : 1 ).misc_value1();
 
+  // NOTE: 2026-07-11 Demonic Tyrant do not trigger Hellbent Commander on arise/demise (must wait to player heartbeat) (bug?)
+  triggers.hellbent_commander_arise &= !bugs;
+  triggers.hellbent_commander_demise &= !bugs;
+
   resource_regeneration = regen_type::DISABLED;
   if ( o()->talents.antoran_armaments.ok() )
     action_list_str = "leap/travel/burning_cleave";
@@ -1364,6 +1541,21 @@ struct burning_cleave_t : public warlock_pet_spell_t
     reduced_aoe_targets = as<int>( data().effectN( 2 ).base_value() );
   }
 
+  int n_targets() const override
+  {
+    // Tyrant with Antoran Armaments (Burning Cleave) has a very narrow arc, so it often misses some targets.
+    // This behavior is replicated through a configurable option that controls the target ratio affected by Burning Cleave.
+    if ( p()->o()->talents.antoran_armaments.ok() && p()->o()->tyrant_antoran_armaments_target_mul < 1.0 )
+    {
+      assert( warlock_pet_spell_t::n_targets() == -1 );
+      const size_t cur_n_targets = target_list().size();
+      return std::max( 1, as<int>( std::lround( cur_n_targets * p()->o()->tyrant_antoran_armaments_target_mul ) ) );
+    }
+    else
+    {
+      return warlock_pet_spell_t::n_targets();
+    }
+  }
 };
 
 struct demonic_tyrant_leap_t : warlock_pet_t::travel_t
@@ -1440,6 +1632,9 @@ doomguard_t::doomguard_t( warlock_t* owner )
 {
   npc_id = owner->talents.summon_doomguard->effectN( 1 ).misc_value1();
 
+  // NOTE: 2026-07-11 Doomguard do not trigger Hellbent Commander on arise (must wait to player heartbeat) (bug?)
+  triggers.hellbent_commander_arise &= !bugs;
+
   action_list_str = "doom_bolt_volley";
 
   // 2026-02-17: Validated coefficients
@@ -1494,6 +1689,10 @@ grimoire_imp_lord_t::grimoire_imp_lord_t( warlock_t* owner )
 {
   npc_id = owner->talents.grimoire_imp_lord->effectN( 2 ).misc_value1();
   npc_suffix = "grimoire";
+
+  // NOTE: 2026-07-11 Grimoire: Imp Lord do not trigger Hellbent Commander on arise/demise (must wait to player heartbeat) (bug?)
+  triggers.hellbent_commander_arise &= !bugs;
+  triggers.hellbent_commander_demise &= !bugs;
 
   action_list_str = "greater_felbolt,if=energy>=" + util::to_string( max_energy_threshold );
 }
@@ -1568,6 +1767,10 @@ grimoire_fel_ravager_t::grimoire_fel_ravager_t( warlock_t* owner )
   npc_id = owner->talents.grimoire_fel_ravager->effectN( 2 ).misc_value1();
   npc_suffix = "grimoire";
 
+  // NOTE: 2026-07-11 Grimoire: Fel Ravager do not trigger Hellbent Commander on arise/demise (must wait to player heartbeat) (bug?)
+  triggers.hellbent_commander_arise &= !bugs;
+  triggers.hellbent_commander_demise &= !bugs;
+
   action_list_str = "travel/abyssal_bite,if=energy>=" + util::to_string( max_energy_threshold );
 }
 
@@ -1591,8 +1794,6 @@ action_t* grimoire_fel_ravager_t::create_action( util::string_view name, util::s
 {
   if ( name == "abyssal_bite" )
     return new abyssal_bite_t( this, options_str );
-  if ( name == "spell_lock" )
-    return new base::spell_lock_t( this, options_str );
 
   return warlock_pet_t::create_action( name, options_str );
 }
@@ -1639,11 +1840,14 @@ struct dominion_of_argus_spell_base_t : public warlock_pet_spell_t
   }
 };
 
-  dominion_of_argus_pet_t::dominion_of_argus_pet_t( warlock_t* owner, std::string_view n, pet_e type )
+dominion_of_argus_pet_t::dominion_of_argus_pet_t( warlock_t* owner, std::string_view n, pet_e type )
   : warlock_pet_t( owner, n, type, true ), main_action( nullptr )
 {
   resource_regeneration = regen_type::DISABLED;
   affected_by.demonic_brutality = false;
+  // NOTE: 2026-07-11 DoA guardians do not trigger Hellbent Commander on arise/demise (must wait to player heartbeat) (bug?)
+  triggers.hellbent_commander_arise &= !bugs;
+  triggers.hellbent_commander_demise &= !bugs;
 }
 
 void dominion_of_argus_pet_t::set_main_action( action_t* a )
@@ -1803,13 +2007,12 @@ void antoran_inquisitor_t::create_actions()
   dominion_of_argus_pet_t::create_actions();
   set_main_action( new mind_sear_channel_t( this ) );
 }
-    /// Antoran Inquisitor End
+/// Antoran Inquisitor End
 
 /// Antoran Jailer Begin
 struct soul_barrage_t : public warlock_pet_spell_t
 {
-  soul_barrage_t( dominion_of_argus_pet_t* p )
-    : warlock_pet_spell_t( "Soul Barrage", p, p->find_spell( 1277099 ) )
+  soul_barrage_t( dominion_of_argus_pet_t* p ) : warlock_pet_spell_t( "Soul Barrage", p, p->find_spell( 1292391 ) )
   {
     background = true;
   }
@@ -1817,33 +2020,16 @@ struct soul_barrage_t : public warlock_pet_spell_t
 
 struct soul_barrage_cast_t : public dominion_of_argus_spell_base_t
 {
-  action_t* soul_barrage;
   soul_barrage_cast_t( dominion_of_argus_pet_t* p )
-    : dominion_of_argus_spell_base_t( "Soul Barrage Cast", p, p->find_spell( 1280307 ) ), soul_barrage( nullptr )
+    : dominion_of_argus_spell_base_t( "Soul Barrage (Cast)", p, p->find_spell( 1292384 ) )
   {
-    soul_barrage = new soul_barrage_t( p );
+    aoe           = as<int>( data().effectN( 1 ).base_value() );
+    impact_action = new soul_barrage_t( p );
+
     // Merge the two actions in the HTML report for cleaner reporting
-    soul_barrage->stats = stats;
-    stats->action_list.push_back( soul_barrage );
+    impact_action->stats = stats;
+    stats->action_list.push_back( impact_action );
     name_str_reporting = "soul_barrage";
-  }
-
-  void execute() override
-  {
-    dominion_of_argus_spell_base_t::execute();
-    // Has an odd behavior where cast times below 1.5s start reducing the number of bolts sent out.
-    auto executes     = std::min( execute_time() / 150_ms, data().effectN( 1 ).base_value() );
-    auto execute_time = 80_ms;  // 80 ms between each bolt
-    for ( int i = 0; i < executes; i++ )
-      make_event( *sim, execute_time * i, [ this ] { soul_barrage->execute_on_target( execute_state->target ); } );
-
-    for ( auto& target : target_list() )
-    {
-      if ( target == execute_state->target )
-        continue;
-      for ( int i = 0; i < data().effectN( 2 ).base_value(); i++ )
-        soul_barrage->execute_on_target( target );
-    }
   }
 };
 
@@ -1915,7 +2101,8 @@ void infernal_t::create_buffs()
 
   immolation = make_buff<buff_t>( this, "immolation", o()->talents.immolation_buff )
                    ->set_tick_callback( [ damage, this ]( buff_t*, int, timespan_t ) {
-                     damage->execute_on_target( target );
+                     if ( target )
+                       damage->execute_on_target( target );
                    } );
 }
 
@@ -1926,7 +2113,7 @@ void infernal_t::arise()
   // 2024-07-18 Testing indicates there is a delay after spawn before first melee
   // Embers looks to trigger at around the same time as first melee swing, but Immolation takes longer to apply (and has no zero-tick)
   // Additionally, there is some unknown amount of movement adjustment the pet can take, so we model this with a distribution
-  timespan_t delay = rng().gauss<1000,100>();
+  timespan_t delay = rng().gauss<1000, 100>();
 
   make_event( *sim, delay, [ this ] {
     buffs.embers->trigger();
@@ -1947,9 +2134,9 @@ void infernal_t::demise()
 
   if ( o()->hero.abyssal_dominion.ok() && type == MAIN )
     make_event( sim, [ this ] {
-      // Random extra duration time between 0_ms and 820_ms following a uniform distribution
-      const timespan_t dur_adjust = timespan_t::from_millis( rng().range( 0.0, 820.0 ) );
-      o()->warlock_pet_list.fragments.spawn( o()->hero.infernal_fragmentation->duration() + dur_adjust, 2u );
+      // Summon two infernal fragments
+      o()->summons.fragment->execute();
+      o()->summons.fragment->execute();
     } );
 }
 
@@ -2134,13 +2321,13 @@ struct rift_chaos_bolt_t : public warlock_pet_spell_t
     debug_cast<chaos_tear_t*>( p() )->bolts--;
   }
 
-  double calculate_direct_amount( action_state_t* s ) const override
+  double composite_da_multiplier( const action_state_t* s ) const override
   {
-    warlock_pet_spell_t::calculate_direct_amount( s );
+    double m = warlock_pet_spell_t::composite_da_multiplier( s );
 
-    s->result_total *= 1.0 + p()->current_pet_stats.composite_spell_crit;
+    m *= 1.0 + p()->current_pet_stats.composite_spell_crit;
 
-    return s->result_total;
+    return m;
   }
 
   double action_multiplier() const override
@@ -2179,7 +2366,7 @@ action_t* chaos_tear_t::create_action( util::string_view name, util::string_view
 /// Overfiend Begin
 
 overfiend_t::overfiend_t( warlock_t* owner, util::string_view name )
-  : warlock_pet_t( owner, name, PET_WARLOCK, true )
+  : warlock_pet_t( owner, name, PET_WARLOCK_RANDOM, true )
 {
   npc_id = owner->talents.summon_overfiend->effectN( 1 ).misc_value1();
 
@@ -2201,13 +2388,13 @@ struct overfiend_chaos_bolt_t : public warlock_pet_spell_t
   double composite_crit_chance() const override
   { return 1.0; }
 
-  double calculate_direct_amount( action_state_t* s ) const override
+  double composite_da_multiplier( const action_state_t* s ) const override
   {
-    warlock_pet_spell_t::calculate_direct_amount( s );
+    double m = warlock_pet_spell_t::composite_da_multiplier( s );
 
-    s->result_total *= 1.0 + p()->current_pet_stats.composite_spell_crit;
+    m *= 1.0 + p()->current_pet_stats.composite_spell_crit;
 
-    return s->result_total;
+    return m;
   }
 
   double action_multiplier() const override
@@ -2258,7 +2445,7 @@ struct eye_beam_t : public warlock_pet_spell_t
   eye_beam_t( warlock_pet_t* p ) : warlock_pet_spell_t( "Eye Beam", p, p->o()->talents.eye_beam )
   {
     if ( p->o()->talents.nether_plating.ok() )
-      aoe = 1 + as<int>( p->o()->talents.nether_plating->effectN( 1 ).base_value() );
+      radius = p->o()->talents.nether_plating->effectN( 2 ).base_value();
   }
 
   double composite_target_multiplier( player_t* target ) const override
@@ -2332,6 +2519,64 @@ action_t* darkglare_t::create_action( util::string_view name, util::string_view 
 
 /// Darkglare End
 
+/// Desperate Soul Begin
+
+desperate_soul_t::desperate_soul_t( warlock_t* owner, util::string_view name )
+  : warlock_pet_t( owner, name, PET_WARLOCK_RANDOM, true )
+{
+  npc_id = owner->talents.summon_desperate_soul->effectN( 1 ).misc_value1();
+
+  action_list_str = "wrath_of_nathreza";
+}
+
+struct wrath_of_nathreza_t : public warlock_pet_spell_t
+{
+  wrath_of_nathreza_t( warlock_pet_t* p )
+    : warlock_pet_spell_t( "Wrath of Nathreza", p, p->o()->talents.wrath_of_nathreza_impact )
+  {
+    aoe = -1;
+    reduced_aoe_targets = as<int>( p->o()->talents.wrath_of_nathreza->effectN( 2 ).base_value() );
+  }
+
+  bool ready() override
+  {
+    if ( debug_cast<desperate_soul_t*>( p() )->wraths <= 0 )
+      return false;
+
+    return warlock_pet_spell_t::ready();
+  }
+
+  void execute() override
+  {
+    if ( p()->o()->haunt_target && !p()->o()->haunt_target->is_sleeping() )
+      set_target( p()->o()->haunt_target );
+
+    warlock_pet_spell_t::execute();
+
+    debug_cast<desperate_soul_t*>( p() )->wraths--;
+
+    if ( debug_cast<desperate_soul_t*>( p() )->wraths <= 0 )
+      make_event( sim, 0_ms, [ this ]() { player->cast_pet()->dismiss(); } );
+  }
+};
+
+void desperate_soul_t::arise()
+{
+  warlock_pet_t::arise();
+
+  wraths = 1;
+};
+
+action_t* desperate_soul_t::create_action( util::string_view name, util::string_view options_str )
+{
+  if ( name == "wrath_of_nathreza" )
+    return new wrath_of_nathreza_t( this );
+
+  return warlock_pet_t::create_action( name, options_str );
+}
+
+/// Desperate_Soul End
+
 }  // namespace affliction
 
 namespace diabolist
@@ -2345,14 +2590,43 @@ namespace diabolist
 
     is_diabolist_guardian = true;
     affected_by.demonic_brutality = false;
-    // NOTE: 2026-02-17 Diabolist guardians do not count towards Hellbent Commander, but they do benefit from its damage increase (bug?)
-    triggers.hellbent_commander &= !bugs;
+    // NOTE: 2026-07-11 Diabolist guardians do not trigger Hellbent Commander (bug?)
+    triggers.hellbent_commander_heartbeat &= !bugs;
+    triggers.hellbent_commander_arise &= !bugs;
+    triggers.hellbent_commander_demise &= !bugs;
     resource_regeneration = regen_type::DISABLED;
 
     owner_coeff.ap_from_sp = 1.0;
 
-    action_list_str = "wicked_cleave";
+    action_list_str = "charge/wicked_cleave";
   }
+
+  struct overlord_charge_t : warlock_pet_t::travel_t
+  {
+    overlord_charge_t( overlord_t* p ) : warlock_pet_t::travel_t( p, "charge" )
+    {
+      speed = 25.0;
+    }
+
+    bool ready() override
+    {
+      // Overlord will do the charge even if is summoned at melee range. In addition, the charge can only occur once.
+      return debug_cast<overlord_t*>( player )->charge_executes > 0;
+    }
+
+    timespan_t execute_time() const override
+    {
+      const timespan_t cast_time = 1_s; // TODO: Set cast time from spell data (432113)
+      return cast_time * player->cache.spell_cast_speed() + warlock_pet_t::travel_t::execute_time();
+    }
+
+    void execute() override
+    {
+      warlock_pet_t::travel_t::execute();
+
+      debug_cast<overlord_t*>( player )->charge_executes--;
+    }
+  };
 
   struct wicked_cleave_t : public warlock_pet_spell_t
   {
@@ -2373,6 +2647,9 @@ namespace diabolist
       warlock_pet_spell_t::execute();
 
       debug_cast<overlord_t*>( p() )->cleaves--;
+
+      if ( debug_cast<overlord_t*>( p() )->cleaves <= 0 )
+        make_event( sim, 0_ms, [ this ]() { player->cast_pet()->dismiss(); } );
     }
 
     // NOTE: 2026-02-17 Overlord Wicked Cleave crits does not benefit from other crit dmg bonus multipliers (bug?)
@@ -2385,13 +2662,13 @@ namespace diabolist
 
       if ( p()->o()->demonology() )
       {
-        // Added in build: 11.2.0.62253: reduces Diab Demons Damage by 20% for Demonology
+        // Modify Diab Demons damage for Demonology
         m *= 1.0 + p()->o()->hero.diabolic_ritual->effectN( 3 ).percent();
       }
 
       if ( p()->o()->destruction() )
       {
-        // Added in build 11.2.0.62253: Increases Diab Demons damage by 15% for Destruction, missing from Patch Notes.
+        // Modify Diab Demons damage for Destruction
         m *= 1.0 + p()->o()->hero.diabolic_ritual->effectN( 4 ).percent();
       }
 
@@ -2411,6 +2688,7 @@ namespace diabolist
   {
     warlock_pet_t::arise();
 
+    charge_executes = 1;
     cleaves = 1;
   }
 
@@ -2418,6 +2696,8 @@ namespace diabolist
   {
     if ( name == "wicked_cleave" )
       return new wicked_cleave_t( this );
+    if ( name == "charge" )
+      return new overlord_charge_t( this );
 
     return warlock_pet_t::create_action( name, options_str );
   }
@@ -2433,8 +2713,10 @@ namespace diabolist
 
     is_diabolist_guardian = true;
     affected_by.demonic_brutality = false;
-    // NOTE: 2026-02-17 Diabolist guardians do not count towards Hellbent Commander, but they do benefit from its damage increase (bug?)
-    triggers.hellbent_commander &= !bugs;
+    // NOTE: 2026-07-11 Diabolist guardians do not trigger Hellbent Commander (bug?)
+    triggers.hellbent_commander_heartbeat &= !bugs;
+    triggers.hellbent_commander_arise &= !bugs;
+    triggers.hellbent_commander_demise &= !bugs;
 
     action_list_str = "chaos_salvo";
   }
@@ -2456,13 +2738,13 @@ namespace diabolist
 
       if ( p()->o()->demonology() )
       {
-        // Added in build: 11.2.0.62253: reduces Diab Demons Damage by 20% for Demonology
+        // Modify Diab Demons damage for Demonology
         m *= 1.0 + p()->o()->hero.diabolic_ritual->effectN( 3 ).percent();
       }
 
       if ( p()->o()->destruction() )
       {
-        // Added in build 11.2.0.62253: Increases Diab Demons damage by 15% for Destruction, missing from Patch Notes.
+        // Modify Diab Demons damage for Destruction
         m *= 1.0 + p()->o()->hero.diabolic_ritual->effectN( 4 ).percent();
       }
 
@@ -2493,6 +2775,14 @@ namespace diabolist
 
       debug_cast<mother_of_chaos_t*>( p() )->salvos--;
     }
+
+    void last_tick( dot_t* d ) override
+    {
+      warlock_pet_spell_t::last_tick( d );
+
+      if ( debug_cast<mother_of_chaos_t*>( p() )->salvos <= 0 )
+        make_event( sim, 0_ms, [ this ]() { player->cast_pet()->dismiss(); } );
+    }
   };
 
   void mother_of_chaos_t::arise()
@@ -2517,8 +2807,10 @@ namespace diabolist
 
     is_diabolist_guardian = true;
     affected_by.demonic_brutality = false;
-    // NOTE: 2026-02-17 Diabolist guardians do not count towards Hellbent Commander, but they do benefit from its damage increase (bug?)
-    triggers.hellbent_commander &= !bugs;
+    // NOTE: 2026-07-11 Diabolist guardians do not trigger Hellbent Commander (bug?)
+    triggers.hellbent_commander_heartbeat &= !bugs;
+    triggers.hellbent_commander_arise &= !bugs;
+    triggers.hellbent_commander_demise &= !bugs;
     resource_regeneration = regen_type::DISABLED;
 
     action_list_str = "felseeker";
@@ -2541,13 +2833,13 @@ namespace diabolist
 
       if ( p()->o()->demonology() )
       {
-        // Added in build: 11.2.0.62253: reduces Diab Demons Damage by 20% for Demonology
+        // Modify Diab Demons damage for Demonology
         m *= 1.0 + p()->o()->hero.diabolic_ritual->effectN( 3 ).percent();
       }
 
       if ( p()->o()->destruction() )
       {
-        // Added in build 11.2.0.62253: Increases Diab Demons damage by 15% for Destruction, missing from Patch Notes.
+        // Modify Diab Demons damage for Destruction
         m *= 1.0 + p()->o()->hero.diabolic_ritual->effectN( 4 ).percent();
       }
 
@@ -2579,6 +2871,14 @@ namespace diabolist
       warlock_pet_spell_t::execute();
 
       debug_cast<pit_lord_t*>( p() )->felseekers--;
+    }
+
+    void last_tick( dot_t* d ) override
+    {
+      warlock_pet_spell_t::last_tick( d );
+
+      if ( debug_cast<pit_lord_t*>( p() )->felseekers <= 0 )
+        make_event( sim, 0_ms, [ this ]() { player->cast_pet()->dismiss(); } );
     }
   };
 
@@ -2651,6 +2951,9 @@ namespace diabolist
       warlock_pet_spell_t::execute();
 
       debug_cast<diabolic_imp_t*>( p() )->bolts--;
+
+      if ( debug_cast<diabolic_imp_t*>( p() )->bolts <= 0 )
+        make_event( sim, 0_ms, [ this ]() { player->cast_pet()->dismiss(); } );
     }
   };
 
@@ -2679,11 +2982,6 @@ struct soul_swipe_base_t : public warlock_pet_spell_t
 {
   soul_swipe_base_t( std::string_view n, warlock_pet_t* p, const spell_data_t* s ) : warlock_pet_spell_t( n, p, s )
   {
-    // Soul Swipe / Rampaging Demonic Soul deals 20% extra damage for demonology
-    // We don't know for sure what effect causes it, but we assume it's this one
-    if ( p->o()->demonology() )
-      base_dd_multiplier *= 1.0 + p->o()->warlock_base.demonology_warlock->effectN( 8 ).percent();
-
     base_dd_multiplier *= 1.0 + p->o()->hero.eternal_hunger->effectN( 2 ).percent();
   }
 };
@@ -2718,7 +3016,7 @@ struct soul_swipe_t : public soul_swipe_base_t
 };
 
 rampaging_demonic_soul_t::rampaging_demonic_soul_t( warlock_t* owner, std::string_view name )
-  : warlock_pet_t( owner, name, PET_WARLOCK_RANDOM, true ), summon_spell( nullptr )
+  : warlock_pet_t( owner, name, PET_WARLOCK_RANDOM, true )
 {
   npc_id = owner->hero.manifested_avarice_spell->effectN( 1 ).misc_value1();
 
@@ -2726,7 +3024,10 @@ rampaging_demonic_soul_t::rampaging_demonic_soul_t( warlock_t* owner, std::strin
   affected_by.demonic_brutality = false;
   action_list_str               = "soul_swipe";
   owner_coeff.sp_from_sp        = 1.0;
-  summon_spell                  = owner->find_spell( 1269042 );  // Rampaging Demonic Soul
+  // NOTE: 2026-07-11 Demonic Soul does not trigger Hellbent Commander (bug?)
+  triggers.hellbent_commander_heartbeat &= !bugs;
+  triggers.hellbent_commander_arise  &= !bugs;
+  triggers.hellbent_commander_demise &= !bugs;
 }
 
 void rampaging_demonic_soul_t::arise()

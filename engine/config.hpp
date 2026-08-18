@@ -137,6 +137,8 @@ constexpr bool SC_NO_NETWORKING_ON = true;
  * Define our own m_pi since M_PI constant is actually only in POSIX math.h
  * */
 constexpr double m_pi = 3.14159265358979323846;
+// used for floating point comparisons
+constexpr double fp_epsilon = 1e-9;
 
 // ==========================================================================
 // Simc related compilation defines
@@ -163,7 +165,7 @@ constexpr double m_pi = 3.14159265358979323846;
 // Simc related value definitions
 // ==========================================================================
 
-#define SC_MAJOR_VERSION "1201"
+#define SC_MAJOR_VERSION "1210"
 #define SC_MINOR_VERSION "01"
 #define SC_VERSION ( SC_MAJOR_VERSION "-" SC_MINOR_VERSION )
 #define SC_BETA 0

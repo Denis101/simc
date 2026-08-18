@@ -187,6 +187,7 @@ struct execution_sentence_t : public paladin_melee_attack_t
     es_inner_t( paladin_t* p ) :
       paladin_melee_attack_t( "execution_sentence_init", p, p->find_spell( 1260251 ) )
     {
+      aoe = -1;
       dual = background = true;
     }
 
@@ -205,9 +206,9 @@ struct execution_sentence_t : public paladin_melee_attack_t
     void init() override
     {
       paladin_melee_attack_t::init();
-      snapshot_flags |= STATE_TARGET_NO_PET | STATE_MUL_TA | STATE_MUL_DA;
+      snapshot_flags |= STATE_TARGET_NO_PET | STATE_MUL_SPELL_DA | STATE_MUL_SPELL_TA | STATE_MUL_PLAYER_DAM;
       update_flags &= ~STATE_TARGET;
-      update_flags |= STATE_MUL_TA | STATE_MUL_DA;
+      update_flags |= STATE_MUL_SPELL_DA | STATE_MUL_SPELL_TA | STATE_MUL_PLAYER_DAM;
     }
   };
 
@@ -296,6 +297,19 @@ struct expurgation_t : public paladin_spell_t
     paladin_spell_t::execute();
   }
 };
+
+struct divine_arbiter_t : public paladin_spell_t
+{
+  divine_arbiter_t( paladin_t* p ) : paladin_spell_t( "divine_arbiter", p, p->find_spell( 1306923 ) )
+  {
+    background = proc = true;
+    aoe               = -1;
+
+    attack_power_mod.direct = data().effectN( 1 ).ap_coeff();
+    base_aoe_multiplier     = data().effectN( 2 ).ap_coeff() / data().effectN( 1 ).ap_coeff();
+  }
+};
+
 void paladin_t::trigger_expurgation(player_t* target, double effectiveness = 1.0)
 {
   if ( talents.expurgation->ok() )
@@ -376,7 +390,19 @@ struct blade_of_justice_t : public paladin_melee_attack_t
   void execute() override
   {
     bool buff_up = p()->buffs.art_of_war->up() || p()->buffs.righteous_cause->up();
+    bool light_within_stacking = p()->is_ptr() && p()->talents.light_within_1->ok();
+    int art_of_war_stacks = light_within_stacking ? p()->buffs.art_of_war->check() : 0;
+    int righteous_cause_stacks = light_within_stacking ? p()->buffs.righteous_cause->check() : 0;
+
     paladin_melee_attack_t::execute();
+
+    if ( light_within_stacking &&
+         ( ( art_of_war_stacks > p()->buffs.art_of_war->check() && p()->buffs.art_of_war->check() > 0 ) ||
+           ( righteous_cause_stacks > p()->buffs.righteous_cause->check() &&
+             p()->buffs.righteous_cause->check() > 0 ) ) )
+    {
+      p()->cooldowns.blade_of_justice->reset( true );
+    }
 
     if ( p()->spells.consecrated_blade->ok() && p()->cooldowns.consecrated_blade_icd->up() )
     {
@@ -386,7 +412,20 @@ struct blade_of_justice_t : public paladin_melee_attack_t
     if ( p()->talents.light_within_3->ok() && buff_up )
     {
       make_event<delayed_execute_event_t>( *sim, p(), lw, execute_state->target, 350_ms );
-      p()->buffs.righteous_cause->expire();
+
+      if ( light_within_stacking )
+      {
+        if ( righteous_cause_stacks > 0 && righteous_cause_stacks == p()->buffs.righteous_cause->check() )
+        {
+          p()->buffs.righteous_cause->decrement();
+          if ( p()->buffs.righteous_cause->check() > 0 )
+            p()->cooldowns.blade_of_justice->reset( true );
+        }
+      }
+      else
+      {
+        p()->buffs.righteous_cause->expire();
+      }
     }
   }
 
@@ -415,6 +454,15 @@ struct divine_storm_second_sunrise_tempest_t : public holy_power_consumer_t<pala
     triggers_crusade_stacks  = false;
     triggers_righteous_cause = false;
   }
+  void impact(action_state_t* s) override
+  {
+    holy_power_consumer_t::impact( s );
+    if ( p()->sets->has_set_bonus( PALADIN_RETRIBUTION, MID1, B4 ) && p()->talents.expurgation->ok() )
+    {
+      double mult = p()->sets->set( PALADIN_RETRIBUTION, MID1, B4 )->effectN( 2 ).percent() * base_multiplier;
+      p()->trigger_expurgation( execute_state->target, mult );
+    }
+  }
 };
 
 struct divine_storm_tempest_t : public holy_power_consumer_t<paladin_melee_attack_t>
@@ -432,6 +480,15 @@ struct divine_storm_tempest_t : public holy_power_consumer_t<paladin_melee_attac
     triggers_divine_purpose  = true;
     triggers_crusade_stacks  = false;
     triggers_righteous_cause = false;
+  }
+  void impact( action_state_t* s ) override
+  {
+    holy_power_consumer_t::impact( s );
+    if ( p()->sets->has_set_bonus( PALADIN_RETRIBUTION, MID1, B4 ) && p()->talents.expurgation->ok() )
+    {
+      double mult = p()->sets->set( PALADIN_RETRIBUTION, MID1, B4 )->effectN( 2 ).percent() * base_multiplier;
+      p()->trigger_expurgation( execute_state->target, mult );
+    }
   }
 };
 
@@ -467,6 +524,15 @@ struct divine_storm_second_sunrise_t : public holy_power_consumer_t<paladin_mele
 
     if ( p()->talents.tempest_of_the_lightbringer->ok() )
       tempest->schedule_execute();
+  }
+  void impact( action_state_t* s ) override
+  {
+    holy_power_consumer_t::impact( s );
+    if ( p()->sets->has_set_bonus( PALADIN_RETRIBUTION, MID1, B4 ) && p()->talents.expurgation->ok() )
+    {
+      double mult = p()->sets->set( PALADIN_RETRIBUTION, MID1, B4 )->effectN( 2 ).percent() * base_multiplier;
+      p()->trigger_expurgation( execute_state->target, mult );
+    }
   }
 };
 
@@ -516,6 +582,7 @@ struct divine_storm_t: public holy_power_consumer_t<paladin_melee_attack_t>
     reduced_aoe_targets = data().effectN( 2 ).base_value();
 
     background = is_free;
+    can_consume_divine_arbiter = true;
     base_multiplier *= mul;
 
     if ( p->talents.tempest_of_the_lightbringer->ok() )
@@ -542,8 +609,6 @@ struct divine_storm_t: public holy_power_consumer_t<paladin_melee_attack_t>
     if ( p()->talents.tempest_of_the_lightbringer->ok() )
       tempest->schedule_execute();
 
-    bool has_echo = false;
-
     if ( sunrise_echo && p()->cooldowns.second_sunrise_icd->up() )
     {
       if ( rng().roll( p()->talents.herald_of_the_sun.second_sunrise->effectN( 1 ).percent() ) )
@@ -551,20 +616,7 @@ struct divine_storm_t: public holy_power_consumer_t<paladin_melee_attack_t>
         p()->cooldowns.second_sunrise_icd->start();
         // TODO(mserrano): validate the correct delay here
         sunrise_echo->start_action_execute_event( 200_ms );
-        has_echo = true;
       }
-    }
-    // ToDo Fluttershy: If this ever gets sensible results, move to impact
-    if ( !background && p()->sets->has_set_bonus( PALADIN_RETRIBUTION, MID1, B4 ) && p()->talents.expurgation->ok() )
-    {
-      // ToDo Fluttershy: Rewrite to spell data later
-      double mult  = .5;
-      if ( has_echo )
-        mult *= 2;
-      if ( p()->talents.tempest_of_the_lightbringer->ok() )
-        mult *= 1.2;
-
-      p()->trigger_expurgation( execute_state->target, mult );
     }
   }
 
@@ -583,6 +635,11 @@ struct divine_storm_t: public holy_power_consumer_t<paladin_melee_attack_t>
         p()->active.sun_sear->target = s->target;
         p()->active.sun_sear->execute();
       }
+    }
+    if ( p()->sets->has_set_bonus( PALADIN_RETRIBUTION, MID1, B4 ) && p()->talents.expurgation->ok() )
+    {
+      double mult = p()->sets->set(PALADIN_RETRIBUTION, MID1, B4)->effectN(2).percent() * base_multiplier;
+      p()->trigger_expurgation( execute_state->target, mult );
     }
   }
 };
@@ -612,6 +669,7 @@ struct templars_verdict_t : public holy_power_consumer_t<paladin_melee_attack_t>
     is_fv( p->talents.final_verdict->ok() )
   {
     parse_options( options_str );
+    is_divine_arbiter_verdict = true;
 
     // spell is not usable without a 2hander
     if ( p->items[ SLOT_MAIN_HAND ].dbc_inventory_type() != INVTYPE_2HWEAPON )
@@ -652,18 +710,6 @@ struct templars_verdict_t : public holy_power_consumer_t<paladin_melee_attack_t>
       p()->resource_gain( RESOURCE_HOLY_POWER, c, p()->gains.hp_templars_verdict_refund );
     }
 
-    
-    if ( !background && p()->sets->has_set_bonus( PALADIN_RETRIBUTION, MID1, B4 ) && p()->talents.expurgation->ok() )
-    {
-      // ToDo Fluttershy: Rewrite to spell data later
-      double mult = 1.0;
-      if ( p()->buffs.empyrean_legacy->up() )
-      {
-        mult = p()->talents.tempest_of_the_lightbringer->ok() ? 1.6875 : 1.625;
-      }
-      p()->trigger_expurgation( execute_state->target, mult );
-    }
-
     if ( p()->buffs.empyrean_legacy->up() )
     {
       p()->active.empyrean_legacy->schedule_execute();
@@ -681,6 +727,15 @@ struct templars_verdict_t : public holy_power_consumer_t<paladin_melee_attack_t>
         if ( p()->cooldowns.hammer_of_wrath != nullptr )
           p()->cooldowns.hammer_of_wrath->reset( true );
       }
+    }
+  }
+  void impact(action_state_t* s) override
+  {
+    holy_power_consumer_t::impact(s);
+    if ( p()->sets->has_set_bonus( PALADIN_RETRIBUTION, MID1, B4 ) && p()->talents.expurgation->ok() )
+    {
+      double mult = p()->sets->set( PALADIN_RETRIBUTION, MID1, B4 )->effectN( 1 ).percent() * base_multiplier;
+      p()->trigger_expurgation( execute_state->target, mult );
     }
   }
 };
@@ -804,7 +859,7 @@ struct wake_of_ashes_t : public paladin_spell_t
         make_event<seething_flames_event_t>( *sim, p(), execute_state->target, seething_flames[i], timespan_t::from_millis( 500 * (i + 1) ) );
       }
     }
-    if ( p()->talents.templar.lights_guidance->ok() )
+    if ( p()->templar() )
     {
       p()->buffs.templar.hammer_of_light_ready->trigger();
     }
@@ -814,7 +869,7 @@ struct wake_of_ashes_t : public paladin_spell_t
       p()->buffs.templar.sacrosanct_crusade->trigger();
     }
 
-    if ( p()->talents.herald_of_the_sun.dawnlight->ok() )
+    if ( p()->herald_of_the_sun() )
     {
       p()->buffs.herald_of_the_sun.dawnlight->trigger(
           as<int>( p()->talents.herald_of_the_sun.dawnlight->effectN( 1 ).base_value() ) );
@@ -1058,6 +1113,8 @@ void paladin_t::create_ret_actions()
 
   if ( specialization() == PALADIN_RETRIBUTION )
   {
+    if ( sets->has_set_bonus( PALADIN_RETRIBUTION, MID2, B4 ) )
+      active.divine_arbiter = new divine_arbiter_t( this );
     active.highlords_judgment = new highlords_judgment_t( this );
     if ( talents.herald_of_the_sun.sun_sear->ok() )
     {
@@ -1106,6 +1163,12 @@ void paladin_t::create_buffs_retribution()
 
   buffs.art_of_war = make_buff( this, "art_of_war", find_spell( 406086 ) );
   buffs.righteous_cause = make_buff( this, "righteous_cause", find_spell( 402916 ) )->set_chance( 1.0 );
+
+  if ( is_ptr() && talents.light_within_1->ok() )
+  {
+    buffs.art_of_war->set_consume_all_stacks( false );
+    buffs.righteous_cause->set_consume_all_stacks( false );
+  }
 
   buffs.execution_sentence = make_buff( this, "execution_sentence", find_spell( 1234189 ) )
     ->set_default_value( 0.0 )

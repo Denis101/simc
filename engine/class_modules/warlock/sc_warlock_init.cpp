@@ -32,6 +32,8 @@ namespace warlock
     warlock_base.wild_imp = conditional_spell_lookup( warlock_base.demonology_warlock->ok(), 104317 ); // Contains pet summoning information (HoG)
     warlock_base.wild_imp_2 = conditional_spell_lookup( warlock_base.demonology_warlock->ok(), 279910 ); // Pet summoning information for Inner Demons, Spiteful Reconstitution and To Hell and Back
     warlock_base.fel_firebolt_2 = conditional_spell_lookup( warlock_base.demonology_warlock->ok(), 334591 ); // 20% cost reduction for Wild Imps
+    warlock_base.infernal_command_buff = conditional_spell_lookup( warlock_base.demonology_warlock->ok(), 387552 ); // Buff of an old talent that still applies but with 0 value
+    warlock_base.shadow_bolt_energize = conditional_spell_lookup( warlock_base.demonology_warlock->ok(), 194192 ); // Used for resource gain
 
     // Destruction
     warlock_base.destruction_warlock = find_specialization_spell( "Destruction Warlock", WARLOCK_DESTRUCTION ); // Should be ID 137046
@@ -69,6 +71,8 @@ namespace warlock
     warlock_t::init_spells_diabolist();
     warlock_t::init_spells_hellcaller();
     warlock_t::init_spells_soul_harvester();
+
+    warlock_t::init_proc_data_entries();
 
     // Register passives
     // NOTE: 2026-02-17 Currently Gloom of Nathreza talent is bugged for Destruction and does not work
@@ -117,16 +121,13 @@ namespace warlock
     parse_all_passive_talents();
     parse_all_passive_sets();
     parse_raid_buffs();
-
-    // NOTE: 2026-02-17 Mark of Perotharn is being applied twice in what appears to be a bug
-    if ( bugs )
-      parse_passive_effects( hero.mark_of_perotharn, true );
   }
 
   void warlock_t::init_spells_affliction()
   {
     // Talents
     talents.agony = find_talent_spell( talent_tree::SPECIALIZATION, "Agony" ); // Should be ID 980
+    talents.agony_energize = conditional_spell_lookup( talents.agony.ok(), 17941 );
 
     talents.unstable_affliction = find_talent_spell( talent_tree::SPECIALIZATION, "Unstable Affliction" ); // Should be ID 1259790
     talents.unstable_affliction_2 = conditional_spell_lookup( talents.unstable_affliction.ok(), 231791 ); // Soul Shard on demise
@@ -137,7 +138,6 @@ namespace warlock
 
     talents.nightfall = find_talent_spell( talent_tree::SPECIALIZATION, "Nightfall" ); // Should be ID 108558
     talents.nightfall_buff = conditional_spell_lookup( warlock_base.affliction_warlock->ok(), 264571 );
-    talents.nightfall_buff_2 = conditional_spell_lookup( warlock_base.affliction_warlock->ok(), 1260279 );
 
     talents.haunt = find_talent_spell( talent_tree::SPECIALIZATION, "Haunt" ); // Should be ID 48181
 
@@ -181,7 +181,7 @@ namespace warlock
     talents.malefic_grasp = find_talent_spell( talent_tree::SPECIALIZATION, "Malefic Grasp" ); // Should be ID 1261149
     talents.malefic_grasp_2 = conditional_spell_lookup( talents.malefic_grasp.ok(), 1261153 );
     talents.malefic_grasp_3 = conditional_spell_lookup( talents.malefic_grasp.ok(), 1279659 );
-    talents.agony_mg = conditional_spell_lookup( talents.malefic_grasp.ok() && talents.agony->ok(), 1261166 );
+    talents.agony_mg = conditional_spell_lookup( talents.malefic_grasp.ok() && talents.agony.ok(), 1261166 );
     talents.unstable_affliction_mg = conditional_spell_lookup( talents.malefic_grasp.ok() && talents.unstable_affliction.ok(), 1261176 );
     talents.corruption_mg = conditional_spell_lookup( talents.malefic_grasp.ok(), 1261158 );
     talents.wither_mg = conditional_spell_lookup( talents.malefic_grasp.ok(), 1279686 );
@@ -199,7 +199,7 @@ namespace warlock
 
     talents.potent_soul_shards = find_talent_spell( talent_tree::SPECIALIZATION, "Potent Soul Shards" ); // Should be ID 1259815
 
-    talents.nocturnal_yield = find_talent_spell( talent_tree::SPECIALIZATION, "Nocturnal Yield" ); // Should be ID 1260271
+    talents.impetuous_wrath = find_talent_spell( talent_tree::SPECIALIZATION, "Impetuous Wrath" ); // Should be ID 1312998
 
     talents.xavius_gambit = find_talent_spell( talent_tree::SPECIALIZATION, "Xavius' Gambit" ); // Should be ID 416615
 
@@ -214,7 +214,7 @@ namespace warlock
 
     talents.deaths_embrace = find_talent_spell( talent_tree::SPECIALIZATION, "Death's Embrace" ); // Should be ID 234876
 
-    talents.patient_zero = find_talent_spell( talent_tree::SPECIALIZATION, "Patient Zero" ); // Should be ID 1260285
+    talents.hedonic_gorging = find_talent_spell( talent_tree::SPECIALIZATION, "Hedonic Gorging" ); // Should be ID 1311969
 
     talents.sow_the_seeds = find_talent_spell( talent_tree::SPECIALIZATION, "Sow the Seeds" ); // Should be ID 196226
 
@@ -223,15 +223,20 @@ namespace warlock
     talents.shadow_of_nathreza_2 = find_talent_spell( talent_tree::SPECIALIZATION, "Shadow of Nathreza", 2 ); // Should be ID 1261990 (II)
     talents.shadow_of_nathreza_3 = find_talent_spell( talent_tree::SPECIALIZATION, "Shadow of Nathreza", 3 ); // Should be ID 1261992 (III)
     talents.shadow_of_nathreza_dot = conditional_spell_lookup( talents.shadow_of_nathreza_1.ok(), 1262710 );
+    talents.summon_desperate_soul = conditional_spell_lookup( talents.shadow_of_nathreza_3.ok(), 1262094 );
     talents.wrath_of_nathreza = conditional_spell_lookup( talents.shadow_of_nathreza_3.ok(), 1262028 );
     talents.wrath_of_nathreza_impact = conditional_spell_lookup( talents.shadow_of_nathreza_3.ok(), 1278047 );
 
     // Additional Tier Set spell data
     tier.wl_affliction_12_0_class_set_2pc = sets->set( WARLOCK_AFFLICTION, MID1, B2 ); // Should be ID 1264869
     tier.wl_affliction_12_0_class_set_4pc = sets->set( WARLOCK_AFFLICTION, MID1, B4 ); // Should be ID 1264870
+    tier.wl_affliction_12_1_class_set_2pc = sets->set( WARLOCK_AFFLICTION, MID2, B2 ); // Should be ID 1296568
+    tier.wl_affliction_12_1_class_set_4pc = sets->set( WARLOCK_AFFLICTION, MID2, B4 ); // Should be ID 1296569
+    tier.unstable_empowerment_buff = conditional_spell_lookup( tier.wl_affliction_12_1_class_set_4pc->ok(), 1305774 );
 
     // Initialize some default values for pet spawners
     warlock_pet_list.darkglares.set_default_duration( talents.summon_darkglare->duration() );
+    warlock_pet_list.desperate_souls.set_default_duration( talents.summon_desperate_soul->duration() );
   }
 
   void warlock_t::init_spells_demonology()
@@ -243,11 +248,13 @@ namespace warlock
 
     talents.demoniac = find_talent_spell( talent_tree::SPECIALIZATION, "Demoniac" ); // Should be ID 426115
     talents.demonbolt_spell = conditional_spell_lookup( talents.demoniac.ok(), 264178 );
+    talents.demonbolt_energize = conditional_spell_lookup( talents.demoniac.ok(), 280127 );
     talents.demonic_core_spell = conditional_spell_lookup( warlock_base.demonology_warlock->ok(), 267102 );
     talents.demonic_core_buff = conditional_spell_lookup( warlock_base.demonology_warlock->ok(), 264173 );
 
     talents.call_dreadstalkers = find_talent_spell( talent_tree::SPECIALIZATION, "Call Dreadstalkers" ); // Should be ID 104316
-    talents.call_dreadstalkers_2 = conditional_spell_lookup( warlock_base.demonology_warlock->ok(), 193332 ); // Duration data
+    talents.call_dreadstalkers_summon_1 = conditional_spell_lookup( warlock_base.demonology_warlock->ok(), 193331 ); // Summon data
+    talents.call_dreadstalkers_summon_2 = conditional_spell_lookup( warlock_base.demonology_warlock->ok(), 193332 ); // Summon data
 
     talents.dominant_hand = find_talent_spell( talent_tree::SPECIALIZATION, "Dominant Hand" ); // Should be ID 1276433
 
@@ -260,7 +267,7 @@ namespace warlock
     talents.imperator = find_talent_spell( talent_tree::SPECIALIZATION, "Imp-erator" ); // Should be ID 416230
 
     talents.implosion = find_talent_spell( talent_tree::SPECIALIZATION, "Implosion" ); // Should be ID 196277
-    talents.implosion_aoe = conditional_spell_lookup( talents.implosion.ok(), 196278 );
+    talents.implosion_aoe = conditional_spell_lookup( warlock_base.demonology_warlock->ok(), 196278 );
 
     talents.power_siphon = find_talent_spell( talent_tree::SPECIALIZATION, "Power Siphon" ); // Should be ID 264130
     talents.power_siphon_buff = conditional_spell_lookup( talents.power_siphon.ok(), 334581 );
@@ -299,7 +306,7 @@ namespace warlock
     talents.antoran_armaments = find_talent_spell( talent_tree::SPECIALIZATION, "Antoran Armaments" ); // Should be ID 1250921
 
     talents.flametouched = find_talent_spell( talent_tree::SPECIALIZATION, "Flametouched" ); // Should be ID 453699
-    talents.ferocity_of_fharg_buff = conditional_spell_lookup( talents.flametouched.ok(), 453704 );
+    talents.flametouched_buff = conditional_spell_lookup( talents.flametouched.ok(), 453704 );
 
     talents.demonic_knowledge = find_talent_spell( talent_tree::SPECIALIZATION, "Demonic Knowledge" ); // Should be ID 386185
 
@@ -360,10 +367,14 @@ namespace warlock
     // Additional Tier Set spell data
     tier.wl_demonology_12_0_class_set_2pc = sets->set( WARLOCK_DEMONOLOGY, MID1, B2 ); // Should be ID 1264871
     tier.wl_demonology_12_0_class_set_4pc = sets->set( WARLOCK_DEMONOLOGY, MID1, B4 ); // Should be ID 1264872
+    tier.wl_demonology_12_1_class_set_2pc = sets->set( WARLOCK_DEMONOLOGY, MID2, B2 ); // Should be ID 1296573
+    tier.wl_demonology_12_1_class_set_4pc = sets->set( WARLOCK_DEMONOLOGY, MID2, B4 ); // Should be ID 1296574
+    tier.isolated_implosion = conditional_spell_lookup( tier.wl_demonology_12_1_class_set_4pc->ok(), 1309535 );
+    tier.isolated_implosion_aoe = conditional_spell_lookup( tier.wl_demonology_12_1_class_set_4pc->ok(), 1306077 );
 
     // Initialize some default values for pet spawners
     warlock_pet_list.wild_imps.set_default_duration( warlock_base.wild_imp->duration() );
-    warlock_pet_list.dreadstalkers.set_default_duration( talents.call_dreadstalkers_2->duration() );
+    warlock_pet_list.dreadstalkers.set_default_duration( talents.call_dreadstalkers_summon_2->duration() );
     warlock_pet_list.demonic_tyrants.set_default_duration( talents.summon_demonic_tyrant->duration() );
     warlock_pet_list.grimoire_imp_lords.set_default_duration( talents.grimoire_imp_lord->duration() );
     warlock_pet_list.grimoire_fel_ravagers.set_default_duration( talents.grimoire_fel_ravager->duration() );
@@ -404,6 +415,7 @@ namespace warlock
 
     talents.shadowburn = find_talent_spell( talent_tree::SPECIALIZATION, "Shadowburn" ); // Should be ID 17877
     talents.shadowburn_2 = conditional_spell_lookup( talents.shadowburn.ok(), 245731 );
+    talents.shadowburn_debuff = conditional_spell_lookup( talents.shadowburn.ok(), 1311913 );
 
     talents.backlash = find_talent_spell( talent_tree::SPECIALIZATION, "Backlash" ); // Should be ID 387384
 
@@ -473,11 +485,9 @@ namespace warlock
     talents.soul_fire = find_talent_spell( talent_tree::SPECIALIZATION, "Soul Fire" ); // Should be ID 6353
     talents.soul_fire_2 = conditional_spell_lookup( talents.soul_fire.ok(), 281490 );
 
-    talents.inferno = find_talent_spell( talent_tree::SPECIALIZATION, "Inferno" ); // Should be ID 1280483
+    talents.chaos_incarnate = find_talent_spell( talent_tree::SPECIALIZATION, "Chaos Incarnate" ); // Should be ID 387275
 
     talents.conflagration_of_chaos = find_talent_spell( talent_tree::SPECIALIZATION, "Conflagration of Chaos" ); // Should be ID 387108
-    talents.conflagration_of_chaos_cf = conditional_spell_lookup( talents.conflagration_of_chaos.ok(), 387109 );
-    talents.conflagration_of_chaos_sb = conditional_spell_lookup( talents.conflagration_of_chaos.ok() && talents.shadowburn.ok(), 387110 );
 
     talents.diabolic_embers = find_talent_spell( talent_tree::SPECIALIZATION, "Diabolic Embers" ); // Should be ID 387173
 
@@ -492,7 +502,7 @@ namespace warlock
     talents.overfiend_buff = conditional_spell_lookup( talents.avatar_of_destruction.ok(), 457578 );
     talents.overfiend_cb = conditional_spell_lookup( talents.avatar_of_destruction.ok(), 434589 );
 
-    talents.chaos_incarnate = find_talent_spell( talent_tree::SPECIALIZATION, "Chaos Incarnate" ); // Should be ID 387275
+    talents.inferno = find_talent_spell( talent_tree::SPECIALIZATION, "Inferno" ); // Should be ID 1280483
 
     talents.alythesss_ire = find_talent_spell( talent_tree::SPECIALIZATION, "Alythess's Ire" ); // Should be ID 1244941
     talents.alythesss_ire_buff = conditional_spell_lookup( talents.alythesss_ire.ok(), 1244947 );
@@ -510,11 +520,14 @@ namespace warlock
     // Additional Tier Set spell data
     tier.wl_destruction_12_0_class_set_2pc = sets->set( WARLOCK_DESTRUCTION, MID1, B2 ); // Should be ID 1264873
     tier.wl_destruction_12_0_class_set_4pc = sets->set( WARLOCK_DESTRUCTION, MID1, B4 ); // Should be ID 1264874
+    tier.wl_destruction_12_1_class_set_2pc = sets->set( WARLOCK_DESTRUCTION, MID2, B2 ); // Should be ID 1296571
+    tier.wl_destruction_12_1_class_set_4pc = sets->set( WARLOCK_DESTRUCTION, MID2, B4 ); // Should be ID 1296572
+    tier.dark_titans_mark_debuff = conditional_spell_lookup( tier.wl_destruction_12_1_class_set_4pc->ok(), 1305711 );
 
     // Initialize some default values for pet spawners
     warlock_pet_list.infernals.set_default_duration( talents.summon_infernal_main->duration() );
     warlock_pet_list.rocs.set_default_duration( talents.summon_infernal_roc->duration() );
-    warlock_pet_list.shadow_rifts.set_default_duration( talents.shadowy_tear_summon->duration() );
+    warlock_pet_list.shadowy_rifts.set_default_duration( talents.shadowy_tear_summon->duration() );
     warlock_pet_list.unstable_rifts.set_default_duration( talents.unstable_tear_summon->duration() );
     warlock_pet_list.chaos_rifts.set_default_duration( talents.chaos_tear_summon->duration() );
     warlock_pet_list.overfiends.set_default_duration( talents.summon_overfiend->duration() );
@@ -621,9 +634,6 @@ namespace warlock
     hero.malevolence = find_talent_spell( talent_tree::HERO, "Malevolence" ); // Should be ID 430014
     hero.malevolence_buff = conditional_spell_lookup( hero.malevolence.ok(), 442726 );
     hero.malevolence_dmg = conditional_spell_lookup( hero.malevolence.ok(), 446285 );
-
-    cooldowns.blackened_soul->duration = hero.blackened_soul->internal_cooldown();
-    cooldowns.seeds_of_their_demise->duration = 15_s;
   }
 
   void warlock_t::init_spells_soul_harvester()
@@ -643,6 +653,7 @@ namespace warlock
     hero.shared_fate_dot = conditional_spell_lookup( hero.shared_fate.ok(), 450591 );
 
     hero.feast_of_souls = find_talent_spell( talent_tree::HERO, "Feast of Souls" ); // Should be ID 449706
+    hero.marked_soul = conditional_spell_lookup( hero.shared_fate.ok() || hero.feast_of_souls.ok(), 450629 );
 
     hero.wicked_reaping = find_talent_spell( talent_tree::HERO, "Wicked Reaping" ); // Should be ID 449631
     hero.wicked_reaping_dmg = conditional_spell_lookup( hero.wicked_reaping.ok(), 449826 );
@@ -663,6 +674,15 @@ namespace warlock
 
     // Initialize some default values for pet spawners
     warlock_pet_list.demonic_souls.set_default_duration( hero.manifested_avarice_spell->duration() );
+  }
+
+  void warlock_t::init_proc_data_entries()
+  {
+    proc_data_entries.shadow_bolt_energize = warlock_base.shadow_bolt_energize;
+    proc_data_entries.agony_energize = talents.agony_energize;
+    proc_data_entries.demonbolt_energize = talents.demonbolt_energize;
+    proc_data_entries.incinerate_energize = warlock_base.incinerate_energize;
+    proc_data_entries.marked_soul = hero.marked_soul;
   }
 
   void warlock_t::init_base_stats()
@@ -700,7 +720,9 @@ namespace warlock
 
     buffs.soulburn = make_buff( this, "soulburn", talents.soulburn_buff );
 
-    buffs.pet_movement = make_buff( this, "pet_movement" )->set_max_stack( 100 );
+    buffs.pet_movement = make_buff( this, "pet_movement" )
+                             ->set_max_stack( 100 )
+                             ->set_proc_callbacks( false );
 
     // Affliction buffs
     create_buffs_affliction();
@@ -718,7 +740,7 @@ namespace warlock
 
   void warlock_t::create_buffs_affliction()
   {
-    buffs.nightfall = make_buff( this, "nightfall", talents.nocturnal_yield.ok() ? talents.nightfall_buff_2 : talents.nightfall_buff );
+    buffs.nightfall = make_buff( this, "nightfall", talents.nightfall_buff );
 
     buffs.darkglare_presence = make_buff( this, "darkglare_presence", talents.darkglare_presence_buff );
 
@@ -730,6 +752,9 @@ namespace warlock
 
     buffs.seed_of_corruption_is_out_dnt = make_buff( this, "seed_of_corruption_is_out_dnt", talents.seed_of_corruption_is_out_dnt )
                                               ->set_quiet( true );
+
+    buffs.unstable_empowerment = make_buff( this, "unstable_empowerment", tier.unstable_empowerment_buff )
+                                     ->set_default_value_from_effect( 1 );
   }
 
   void warlock_t::create_buffs_demonology()
@@ -743,7 +768,7 @@ namespace warlock
                              ->set_tick_time_behavior( buff_tick_time_behavior::UNHASTED )
                              ->set_tick_zero( true )
                              ->set_tick_callback( [ this ]( buff_t*, int, timespan_t ) {
-                               warlock_pet_list.wild_imps.spawn( warlock_base.wild_imp_2->duration(), 1u );
+                               summons.wild_imp_2->execute();
                              } );
 
     buffs.tyrants_oblation = make_buff( this, "tyrants_oblation", talents.tyrants_oblation_buff )
@@ -764,25 +789,32 @@ namespace warlock
                                   } );
 
     // Pet tracking buffs
-    buffs.wild_imps = make_buff( this, "wild_imps" )->set_max_stack( 40 );
+    buffs.wild_imps = make_buff( this, "wild_imps" )->set_max_stack( 40 )
+                          ->set_proc_callbacks( false );
 
     buffs.dreadstalkers = make_buff( this, "dreadstalkers" )->set_max_stack( 8 )
-                              ->set_duration( talents.call_dreadstalkers_2->duration() );
+                              ->set_duration( talents.call_dreadstalkers_summon_2->duration() )
+                              ->set_proc_callbacks( false );
 
     buffs.vilefiend = make_buff( this, "vilefiend" )->set_max_stack( 2 )
-                          ->set_duration( talents.vilefiend->duration() );
+                          ->set_duration( talents.vilefiend->duration() )
+                          ->set_proc_callbacks( false );
 
     buffs.grimoire_imp_lord = make_buff( this, "grimoire_imp_lord" )->set_max_stack( 1 )
-                                  ->set_duration( talents.grimoire_imp_lord->duration() );
+                                  ->set_duration( talents.grimoire_imp_lord->duration() )
+                                  ->set_proc_callbacks( false );
 
     buffs.grimoire_fel_ravager = make_buff( this, "grimoire_fel_ravager" )->set_max_stack( 1 )
-                                     ->set_duration( talents.grimoire_fel_ravager->duration() );
+                                     ->set_duration( talents.grimoire_fel_ravager->duration() )
+                                     ->set_proc_callbacks( false );
 
     buffs.doomguard = make_buff( this, "doomguard" )->set_max_stack( 4 )
-                          ->set_duration( talents.summon_doomguard->duration() );
+                          ->set_duration( talents.summon_doomguard->duration() )
+                          ->set_proc_callbacks( false );
 
     buffs.tyrant = make_buff( this, "tyrant" )->set_max_stack( 1 )
-                       ->set_duration( talents.summon_demonic_tyrant->duration() );
+                       ->set_duration( talents.summon_demonic_tyrant->duration() )
+                       ->set_proc_callbacks( false );
   }
 
   void warlock_t::create_buffs_destruction()
@@ -802,14 +834,6 @@ namespace warlock
                                 ->set_default_value_from_effect( 1 );
 
     buffs.rain_of_chaos = make_buff( this, "rain_of_chaos", talents.rain_of_chaos_buff );
-
-    buffs.conflagration_of_chaos_cf = make_buff( this, "conflagration_of_chaos_cf", talents.conflagration_of_chaos_cf )
-                                          ->set_default_value_from_effect( 1 )
-                                          ->set_chance( talents.conflagration_of_chaos->effectN( 1 ).percent() );
-
-    buffs.conflagration_of_chaos_sb = make_buff( this, "conflagration_of_chaos_sb", talents.conflagration_of_chaos_sb )
-                                          ->set_default_value_from_effect( 1 )
-                                          ->set_chance( talents.conflagration_of_chaos->effectN( 1 ).percent() );
 
     buffs.flashpoint = make_buff( this, "flashpoint", talents.flashpoint_buff )
                            ->set_pct_buff_type( STAT_PCT_BUFF_HASTE )
@@ -879,7 +903,7 @@ namespace warlock
                                {
                                  if ( cur == 0 && in_combat && !demonic_art_buff_replaced )
                                  {
-                                   warlock_pet_list.overlords.spawn();
+                                   summons.overlord->execute();
                                  }
                                } );
 
@@ -889,10 +913,7 @@ namespace warlock
                              {
                                if ( cur == 0 && in_combat && !demonic_art_buff_replaced )
                                {
-                                 warlock_pet_list.mothers.spawn();
-
-                                 if ( hero.secrets_of_the_coven.ok() )
-                                      buffs.infernal_bolt->trigger();
+                                 summons.mother->execute();
                                }
                              } );
 
@@ -902,10 +923,7 @@ namespace warlock
                                {
                                  if ( cur == 0 && in_combat && !demonic_art_buff_replaced )
                                  {
-                                   warlock_pet_list.pit_lords.spawn();
-
-                                   if ( hero.ruination.ok() )
-                                     buffs.ruination->trigger();
+                                   summons.pit_lord->execute();
                                  }
                                } );
 
@@ -917,7 +935,8 @@ namespace warlock
 
     buffs.infernal_bolt = make_buff( this, "infernal_bolt", hero.infernal_bolt_buff );
 
-    buffs.abyssal_dominion = make_buff( this, "abyssal_dominion", hero.abyssal_dominion_buff );
+    buffs.abyssal_dominion = make_buff( this, "abyssal_dominion", hero.abyssal_dominion_buff )
+                                 ->set_duration( hero.abyssal_dominion_buff->duration() + talents.reign_of_tyranny->effectN( 1 ).time_value() );
 
     buffs.ruination = make_buff( this, "ruination", hero.ruination_buff );
 
@@ -1070,11 +1089,13 @@ namespace warlock
   void warlock_t::init_procs_demonology()
   {
     procs.demonic_core_dogs = get_proc( "demonic_core_dogs" );
-    procs.demonic_core_imps = get_proc( "demonic_core_imps" );
+    procs.demonic_core_imps_fade = get_proc( "demonic_core_imps_fade" );
+    procs.demonic_core_imps_implosion = get_proc( "demonic_core_imps_implosion" );
     procs.carnivorous_stalkers = get_proc( "carnivorous_stalkers" );
     procs.infernal_rapidity = get_proc( "infernal_rapidity" );
     procs.spiteful_reconstitution = get_proc( "spiteful_reconstitution" );
     procs.demonic_knowledge = get_proc( "demonic_knowledge" );
+    procs.isolated_implosion = get_proc( "isolated_implosion" );
   }
 
   void warlock_t::init_procs_destruction()
@@ -1084,8 +1105,6 @@ namespace warlock
     procs.chaotic_inferno = get_proc( "chaotic_inferno" );
     procs.dimensional_rift = get_proc( "dimensional_rift" );
     procs.avatar_of_destruction = get_proc( "avatar_of_destruction" );
-    procs.conflagration_of_chaos_cf = get_proc( "conflagration_of_chaos_cf" );
-    procs.conflagration_of_chaos_sb = get_proc( "conflagration_of_chaos_sb" );
     procs.alythesss_ire = get_proc( "alythesss_ire" );
     procs.reverse_entropy = get_proc( "reverse_entropy" );
     procs.rain_of_chaos = get_proc( "rain_of_chaos" );
@@ -1106,7 +1125,6 @@ namespace warlock
     procs.blackened_soul = get_proc( "blackened_soul" );
     procs.bleakheart_tactics = get_proc( "bleakheart_tactics" );
     procs.seeds_of_their_demise = get_proc( "seeds_of_their_demise" );
-    procs.mark_of_perotharn = get_proc( "mark_of_perotharn" );
     procs.devil_fruit = get_proc( "devil_fruit" );
   }
 
@@ -1163,10 +1181,11 @@ namespace warlock
           auto tdata = get_target_data( s->target );
           assert( tdata );
           dot_t* agony_dot = tdata->dots.agony;
+          assert( agony_dot && agony_dot->is_ticking() );
           unsigned active_agonies = get_active_dots( agony_dot );
-          assert( agony_dot && agony_dot->is_ticking() && active_agonies > 0 );
+          assert( active_agonies > 0 );
           increment_max *= std::pow( active_agonies, -2.0 / 3.0 );
-          return rng().range( 0.0, increment_max );
+          return rng().range( increment_max );
         }, true, true );
     }
 
@@ -1200,10 +1219,11 @@ namespace warlock
           auto tdata = get_target_data( s->target );
           assert( tdata );
           dot_t* corruption_dot = hero.wither.ok() ? tdata->dots.wither : tdata->dots.corruption;
+          assert( corruption_dot && corruption_dot->is_ticking() );
           unsigned active_corruptions = get_active_dots( corruption_dot );
-          assert( corruption_dot && corruption_dot->is_ticking() && active_corruptions > 0 );
+          assert( active_corruptions > 0 );
           increment_max *= std::pow( active_corruptions, -2.0 / 3.0 );
-          return rng().range( 0.0, increment_max );
+          return rng().range( increment_max );
         }, true, true );
     }
 
@@ -1239,17 +1259,29 @@ namespace warlock
 
   void warlock_t::init_rng_demonology()
   {
+    if ( talents.demoniac.ok() )
+    {
+      // Modeling Demoniac (Wild Imp fade) as a pseudo-random distribution (PRD) with a nominal rate of 10% and a hard cap of 21 attempts.
+      // The corresponding PRD constant, calculated with that cap included, is C = 0.014559015812945588.
+      unsigned demoniac_imp_fade_hardcap = static_cast<unsigned>( rng_settings.demoniac_imp_fade_hard_cap.setting_value );
+      double c_dwif = prd::find_constant( talents.demonic_core_spell->effectN( 1 ).percent(), demoniac_imp_fade_hardcap );
+      prd_rng.demoniac_imp_fade = get_accumulated_rng( "demoniac_imp_fade", c_dwif, demoniac_imp_fade_hardcap );
+
+      // NOTE: 2026-04-05 It has been tested that Demoniac (Wild Imp implosion) follows a Flat % chance model for each wild imp imploded
+      double demoniac_imp_implosion_chance = talents.demonic_core_spell->effectN( 1 ).percent() + hero.sataiels_volition->effectN( 3 ).percent();
+      flat_rng.demoniac_imp_implosion = get_simple_proc_rng( "demoniac_imp_implosion", demoniac_imp_implosion_chance);
+    }
+
     // NOTE: 2026-03-06 It has been tested that Carnivorous Stalkers follows a Flat % chance model for each individual melee hit
     if ( talents.carnivorous_stalkers.ok() )
       flat_rng.carnivorous_stalkers = get_simple_proc_rng( "carnivorous_stalkers", talents.carnivorous_stalkers->effectN( 1 ).percent() );
 
-    // NOTE: 2026-03-06 It has been tested that Infernal Rapidity follows a Flat % chance model for each individual cast
-    // However, the % chance seems to be bugged and only half of what is specified in the spell data is being applied (bug)
+    // Modeling Infernal Rapidity as a pseudo-random distribution (PRD) with a nominal rate of 10%, which corresponds to PRD constant
+    // C = 0.014745844781072676. Each Wild Imp uses its own independent accumulator PRD, reset to 0 on spawn. Since a single Wild Imp
+    // can cast at most 6 Fel Firebolts, the PRD never has time to fully ramp up, resulting in an average proc chance of ~4.80%.
     if ( talents.infernal_rapidity.ok() )
     {
-      double infernal_rapidity_chance = talents.infernal_rapidity->effectN( 1 ).percent();
-      infernal_rapidity_chance = bugs ? infernal_rapidity_chance * 0.5 : infernal_rapidity_chance;
-      flat_rng.infernal_rapidity = get_simple_proc_rng( "infernal_rapidity", infernal_rapidity_chance );
+      prd_rng.infernal_rapidity_prd_c_value = prd::find_constant( talents.infernal_rapidity->effectN( 1 ).percent() );
     }
 
     // Modeling Spiteful Reconstitution as a pseudo-random distribution (PRD) with an uncapped nominal rate of 10%.
@@ -1258,32 +1290,30 @@ namespace warlock
     if ( talents.spiteful_reconstitution.ok() )
     {
       double c_sr = prd::find_constant( rng_settings.spiteful_reconstitution.setting_value );
-      int spiteful_reconstitution_hardcap = static_cast<int>( rng_settings.spiteful_reconstitution_hard_cap.setting_value );
+      unsigned spiteful_reconstitution_hardcap = static_cast<unsigned>( rng_settings.spiteful_reconstitution_hard_cap.setting_value );
       prd_rng.spiteful_reconstitution = get_accumulated_rng( "spiteful_reconstitution", c_sr, spiteful_reconstitution_hardcap );
     }
 
-    // Demonic Knowledge uses Deck of Cards RNG at 10 out of 80 (rank 1) and 18 out of 80 (rank 2)
-    // NOTE: 2026-03-06 Demonic Knowledge does not appear to use the average chance indicated in the spell data, but
-    // rather follows a deck of cards model that also does not match the expected average chance (bug)
+    // Demonic Knowledge uses Deck of Cards RNG at 6 out of 80 (rank 1) and 12 out of 80 (rank 2)
     if ( talents.demonic_knowledge.ok() )
     {
-      const int max_cards = 80;
-
+      int deck_size = static_cast<int>( rng_settings.demonic_knowledge_deck_size.setting_value );
       int cards = 0;
-      if ( bugs )
-      {
-        assert( talents.demonic_knowledge.rank() == 2 || talents.demonic_knowledge.rank() == 1 );
-        if ( talents.demonic_knowledge.rank() == 2 )
-          cards = static_cast<int>( rng_settings.demonic_knowledge_rank2_cards.setting_value );
-        else if ( talents.demonic_knowledge.rank() == 1 )
-          cards = static_cast<int>( rng_settings.demonic_knowledge_rank1_cards.setting_value );
-      }
-      else
-      {
-        cards = static_cast<int>( talents.demonic_knowledge->effectN( 1 ).percent() * max_cards + 0.5 );
-      }
+      assert( talents.demonic_knowledge.rank() == 2 || talents.demonic_knowledge.rank() == 1 );
+      if ( talents.demonic_knowledge.rank() == 2 )
+        cards = static_cast<int>( rng_settings.demonic_knowledge_rank2_cards.setting_value );
+      else if ( talents.demonic_knowledge.rank() == 1 )
+        cards = static_cast<int>( rng_settings.demonic_knowledge_rank1_cards.setting_value );
 
-      deck_rng.demonic_knowledge = get_shuffled_rng( "demonic_knowledge", cards, max_cards );
+      deck_rng.demonic_knowledge = get_shuffled_rng( "demonic_knowledge", cards, deck_size );
+    }
+
+    // Modeling Isolated Implosion as a pseudo-random distribution (PRD) with a nominal
+    // rate of 20%, which corresponds to PRD constant C = 0.055704042949781852.
+    if ( active_4pc<MID2>() )
+    {
+      double c_ii = prd::find_constant( tier.wl_demonology_12_1_class_set_4pc->effectN( 3 ).percent() );
+      prd_rng.isolated_implosion = get_accumulated_rng( "isolated_implosion", c_ii );
     }
   }
 
@@ -1308,7 +1338,12 @@ namespace warlock
     }
 
     // Rain of Chaos uses Deck of Cards RNG at 3 out of 20
-    deck_rng.rain_of_chaos = get_shuffled_rng( "rain_of_chaos", 3, 20 );
+    if ( talents.rain_of_chaos.ok() )
+    {
+      int deck_size = static_cast<int>( rng_settings.rain_of_chaos_deck_size.setting_value );
+      int cards = static_cast<int>( rng_settings.rain_of_chaos_cards.setting_value );
+      deck_rng.rain_of_chaos = get_shuffled_rng( "rain_of_chaos", cards, deck_size );
+    }
 
     // Modeling Dimensional Rift as a pseudo-random distribution (PRD) with a nominal
     // rate of 10%, which corresponds to PRD constant C = 0.014745844781072676.
@@ -1342,8 +1377,39 @@ namespace warlock
 
     if ( talents.demonfire_infusion.ok() )
     {
-      flat_rng.demonfire_infusion_dot = get_simple_proc_rng( "demonfire_infusion_dot", talents.demonfire_infusion->effectN( 1 ).percent() );
-      flat_rng.demonfire_infusion_inc = get_simple_proc_rng( "demonfire_infusion_incinerate", talents.demonfire_infusion->effectN( 2 ).percent() );
+      // Uniform sources use twice the spell-data chance as their maximum so their mean increment matches that chance
+      const double inc_max_demonfire_infusion_dot = talents.demonfire_infusion->effectN( 1 ).percent() * 2.0;
+      const double inc_max_demonfire_infusion_inc = talents.demonfire_infusion->effectN( 2 ).percent() * 2.0;
+      const double inc_fixed_demonfire_infusion_ib = talents.demonfire_infusion->effectN( 2 ).percent();
+      const bool fnb_talent = talents.fire_and_brimstone.ok();
+
+      progress_rng.demonfire_infusion = get_threshold_rng( "demonfire_infusion", inc_max_demonfire_infusion_dot,
+        [ this, inc_max_demonfire_infusion_inc, inc_fixed_demonfire_infusion_ib, fnb_talent ]( double increment_max, action_state_t* s ) {
+          assert( s );
+          if ( s->action->id == warlock_base.incinerate->id() )
+          {
+            // Incinerate uses a source-specific uniform increment maximum instead of the default increment_max
+            increment_max = inc_max_demonfire_infusion_inc;
+            if ( fnb_talent )
+            {
+              // With FnB, Incinerate's expected total accumulator contribution scales with the cube root of the cast's unique impacts, including Havoc
+              const unsigned target_count = helpers::incinerate_state_target_count( s );
+              assert( target_count > 0 );
+              increment_max *= std::pow( target_count, -2.0 / 3.0 );
+            }
+          }
+          else if ( s->action->id == hero.infernal_bolt->id() )
+          {
+            // Infernal Bolt impacts, including Havoc, add a fixed value to the accumulator
+            return inc_fixed_demonfire_infusion_ib;
+          }
+          else
+          {
+            // Immolate and Wither use the default increment_max initialized from inc_max_demonfire_infusion_dot
+            assert( s->action->id == warlock_base.immolate_dot->id() || s->action->id == hero.wither_dot->id() );
+          }
+          return rng().range( increment_max );
+        }, true, true );
     }
 
     if ( talents.alythesss_ire.ok() )
@@ -1355,18 +1421,18 @@ namespace warlock
       assert( 100u % chance == 0u );
       const unsigned alythesss_ire_trigger = 100u / chance;
 
-      cycle_proc.alythesss_ire = get_rng<fixed_cycle_proc_t>( "alythesss_ire", alythesss_ire_trigger, true, [ this ]( unsigned trigger_count ){
+      cycle_proc.alythesss_ire = get_rng<fixed_cycle_proc_t>( "alythesss_ire", alythesss_ire_trigger, true, [ this ]( unsigned trigger_count ) {
         // NOTE: 2026-03-06 Alythess's Ire usually procs at a fixed interval of attempts. Rarely, the cycle
         // shifts and advances the next proc; testing suggests this happens randomly in roughly ~1% of procs.
         return flat_rng.alythesss_ire_shift->trigger() ? rng().range( 1u, trigger_count ) : 0u;
       } );
     }
 
-    // Modeling Echo of Sargeras as a pseudo-random distribution (PRD) with a nominal
-    // rate of 10%, which corresponds to PRD constant C = 0.014745844781072676.
+    // Modeling Echo of Sargeras as a pseudo-random distribution (PRD) with a nominal rate of 10% (20% with 12.1 2pc tier),
+    // which corresponds to PRD constant C = 0.014745844781072676 (0.055704042949781852 with 12.1 2pc tier).
     if ( talents.embers_of_nihilam_1.ok() )
     {
-      double c_es = prd::find_constant( rng_settings.echo_of_sargeras.setting_value );
+      double c_es = prd::find_constant( talents.embers_of_nihilam_1->effectN( 1 ).percent() );
       prd_rng.echo_of_sargeras = get_accumulated_rng( "echo_of_sargeras", c_es );
     }
   }
@@ -1379,9 +1445,35 @@ namespace warlock
   {
     flat_rng.wither_crit_energize = get_simple_proc_rng( "wither_crit_energize", hero.wither_direct->effectN( 2 ).percent() );
     flat_rng.blackened_soul = get_simple_proc_rng( "blackened_soul", rng_settings.blackened_soul.setting_value );
-    flat_rng.bleakheart_tactics = get_simple_proc_rng( "bleakheart_tactics", rng_settings.bleakheart_tactics.setting_value );
-    flat_rng.seeds_of_their_demise = get_simple_proc_rng( "seeds_of_their_demise", rng_settings.seeds_of_their_demise.setting_value );
-    flat_rng.mark_of_perotharn = get_simple_proc_rng( "mark_of_perotharn", rng_settings.mark_of_perotharn.setting_value );
+
+    // Modeling Bleakheart Tactics as a shared pseudo-random distribution (PRD) with a nominal
+    // rate of 15%, which corresponds to PRD constant C = 0.032220914373087675.
+    if ( hero.bleakheart_tactics.ok() )
+    {
+      double c_bt = prd::find_constant( rng_settings.bleakheart_tactics.setting_value );
+      prd_rng.bleakheart_tactics = get_accumulated_rng( "bleakheart_tactics", c_bt );
+    }
+
+    // Seeds of their Demise proc
+    if ( hero.seeds_of_their_demise.ok() )
+    {
+      double base_inc_max = rng_settings.seeds_of_their_demise.setting_value;
+
+      progress_rng.seeds_of_their_demise = get_threshold_rng( "seeds_of_their_demise", base_inc_max,
+        [ this ]( double increment_max, action_state_t* s ) {
+          assert( hero.wither.ok() );
+          assert( s );
+          auto tdata = get_target_data( s->target );
+          assert( tdata );
+          dot_t* wither_dot = tdata->dots.wither;
+          assert( wither_dot && wither_dot->is_ticking() );
+          const double stacks_before = wither_dot->current_stack() + 1.0;
+          unsigned active_withers = get_active_dots( wither_dot );
+          assert( active_withers > 0 );
+          const double weight = std::pow( stacks_before, -2.0 / 3.0 ) * std::pow( active_withers, -3.0 / 4.0 );
+          return rng().range( increment_max * weight );
+        }, true, true );
+    }
 
     rppm_rng.devil_fruit = get_rppm( "devil_fruit", hero.devil_fruit );
   }
@@ -1410,26 +1502,34 @@ namespace warlock
       prd_rng.manifested_avarice = get_accumulated_rng( "manifested_avarice", c_ma );
     }
 
-    // Modeling Feast of Souls as a pseudo-random distribution (PRD) with an uncapped nominal rate of 4% (aff) / 10% (demo). Those
-    // nominal rates correspond to PRD constants C = 0.002448555471647706 (aff) / C = 0.014745844781072676 (demo). A separate hard
+    // Modeling Feast of Souls (Kill) as a pseudo-random distribution (PRD) with an uncapped nominal rate of 12% (aff) / 10% (demo), which
+    // corresponds to PRD constants C = 0.020983228162532177 (aff) / C = 0.014745844781072676 (demo). Due to a possible bug, Affliction FoS
+    // from Quietus shares the same PRD, but with a lower activation chance.
+    // Modeling Feast of Souls (Quietus) as a pseudo-random distribution (PRD) with an uncapped nominal rate of 4% (aff) / 10% (demo).
+    // Those nominal rates correspond to PRD constants C = 0.002448555471647706 (aff) / C = 0.014745844781072676 (demo). A separate hard
     // cap of 26 attempts is then applied on top of the PRD, raising the effective average proc chance to ~4.94% (aff) / ~10.01% (demo).
     if ( hero.feast_of_souls.ok() )
     {
       assert( affliction() || demonology() );
-      double c_fs = 0.0;
-      int feast_of_souls_hardcap = 0;
       if ( affliction() )
       {
-        c_fs = prd::find_constant( rng_settings.feast_of_souls_aff.setting_value );
-        feast_of_souls_hardcap = static_cast<int>( rng_settings.feast_of_souls_hard_cap_aff.setting_value );
+        double c_fs = prd::find_constant( rng_settings.feast_of_souls_aff.setting_value );
+        double c_fsq = prd::find_constant( rng_settings.feast_of_souls_aff_quietus.setting_value );
+        unsigned feast_of_souls_hardcap = static_cast<unsigned>( rng_settings.feast_of_souls_hard_cap_aff.setting_value );
+        prd_rng.feast_of_souls = get_accumulated_rng( "feast_of_souls", c_fs, feast_of_souls_hardcap,
+          !bugs ? accumulated_rng_fn{} :
+          [ c_fsq, cap = feast_of_souls_hardcap ]( double c_fs, unsigned trigger_count, action_state_t* s ) -> double
+          {
+            return ( cap > 0 && trigger_count >= cap ) ? 1.0 : ( s ? c_fsq : c_fs ) * trigger_count;
+          }
+        );
       }
       else if ( demonology() )
       {
-        c_fs = prd::find_constant( rng_settings.feast_of_souls_demo.setting_value );
-        feast_of_souls_hardcap = static_cast<int>( rng_settings.feast_of_souls_hard_cap_demo.setting_value );
+        double c_fs = prd::find_constant( rng_settings.feast_of_souls_demo.setting_value );
+        unsigned feast_of_souls_hardcap = static_cast<unsigned>( rng_settings.feast_of_souls_hard_cap_demo.setting_value );
+        prd_rng.feast_of_souls = get_accumulated_rng( "feast_of_souls", c_fs, feast_of_souls_hardcap );
       }
-
-      prd_rng.feast_of_souls = get_accumulated_rng( "feast_of_souls", c_fs, feast_of_souls_hardcap );
     }
   }
 
@@ -1585,20 +1685,34 @@ namespace warlock
 
   void warlock_t::add_rng_option( warlock_t::rng_settings_t::rng_setting_t& setting )
   {
-    add_option( opt_float( "rng_" + setting.option_name, setting.setting_value ) );
+    if ( setting.min != std::numeric_limits<double>::lowest() || setting.max != std::numeric_limits<double>::max() )
+      add_option( opt_float( "warlock.rng_" + setting.option_name, setting.setting_value, setting.min, setting.max ) );
+    else
+      add_option( opt_float( "warlock.rng_" + setting.option_name, setting.setting_value ) );
+
+    add_option( opt_deprecated( "rng_" + setting.option_name,  "warlock.rng_" + setting.option_name ) );
   }
 
   void warlock_t::create_options()
   {
     player_t::create_options();
 
-    add_option( opt_int( "soul_shards", initial_soul_shards ) );
-    add_option( opt_string( "default_pet", default_pet ) );
-    add_option( opt_bool( "disable_felstorm", disable_auto_felstorm ) );
-    add_option( opt_bool( "normalize_destruction_mastery", normalize_destruction_mastery ) );
-    add_option( opt_bool( "eye_explosion_instanced_bug_cb", eye_explosion_instanced_bug_cb ) );
-    add_option( opt_bool( "eye_explosion_instanced_bug_sb", eye_explosion_instanced_bug_sb ) );
-    add_option( opt_bool( "eye_explosion_instanced_bug_rof", eye_explosion_instanced_bug_rof ) );
+    add_option( opt_int( "warlock.soul_shards", initial_soul_shards ) );
+    add_option( opt_deprecated( "soul_shards", "warlock.soul_shards" ) );
+    add_option( opt_string( "warlock.default_pet", default_pet ) );
+    add_option( opt_deprecated( "default_pet", "warlock.default_pet" ) );
+    add_option( opt_bool( "warlock.disable_felstorm", disable_auto_felstorm ) );
+    add_option( opt_deprecated( "disable_felstorm", "warlock.disable_felstorm" ) );
+    add_option( opt_bool( "warlock.normalize_destruction_mastery", normalize_destruction_mastery ) );
+    add_option( opt_deprecated( "normalize_destruction_mastery", "warlock.normalize_destruction_mastery" ) );
+    add_option( opt_bool( "warlock.eye_explosion_instanced_bug_cb", eye_explosion_instanced_bug_cb ) );
+    add_option( opt_deprecated( "eye_explosion_instanced_bug_cb", "warlock.eye_explosion_instanced_bug_cb" ) );
+    add_option( opt_bool( "warlock.eye_explosion_instanced_bug_sb", eye_explosion_instanced_bug_sb ) );
+    add_option( opt_deprecated( "eye_explosion_instanced_bug_sb", "warlock.eye_explosion_instanced_bug_sb" ) );
+    add_option( opt_bool( "warlock.eye_explosion_instanced_bug_rof", eye_explosion_instanced_bug_rof ) );
+    add_option( opt_deprecated( "eye_explosion_instanced_bug_rof", "warlock.eye_explosion_instanced_bug_rof" ) );
+    add_option( opt_float( "warlock.tyrant_antoran_armaments_target_mul", tyrant_antoran_armaments_target_mul, 0.0, 1.0 ));
+    add_option( opt_deprecated( "tyrant_antoran_armaments_target_mul", "warlock.tyrant_antoran_armaments_target_mul" ) );
 
     rng_settings.for_each( [ this ]( auto& setting )
     {
@@ -1636,7 +1750,6 @@ namespace warlock
 
     warlock_pet_list.active = nullptr;
     havoc_target = nullptr;
-    bugged_mayhem = false;
     haunt_target = nullptr;
     wild_imp_spawns.clear();
     diabolic_ritual = rng().range( 0, 3 );
